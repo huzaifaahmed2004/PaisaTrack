@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   title: "PaisaTrack - Personal Finance Tracker",
   description: "Track your finances with ease - Pakistani personal finance app",
   generator: "v0.app",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 }
 
 export default function RootLayout({
