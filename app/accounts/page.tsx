@@ -76,7 +76,7 @@ export default function AccountsPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border p-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
+        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
               <ArrowLeft className="h-4 w-4" />
@@ -115,25 +115,23 @@ export default function AccountsPage() {
                 {accounts.map((account) => (
                   <div
                     key={account.id}
-                    className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+                    className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center text-xl">
+                    <div className="flex items-start md:items-center gap-4 min-w-0">
+                      <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center text-xl shrink-0">
                         {getAccountIcon(account.type)}
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-lg">{account.name}</h3>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-lg truncate">{account.name}</h3>
                         <p className="text-sm text-muted-foreground capitalize">{account.type} Account</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-between md:justify-end gap-4">
                       <div className="text-right">
-                        <p className="text-xl font-bold">PKR {account.balance.toLocaleString()}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Updated {account.updatedAt.toLocaleDateString()}
-                        </p>
+                        <p className="text-base sm:text-xl font-bold">PKR {account.balance.toLocaleString()}</p>
+                        <p className="text-xs text-muted-foreground">Updated {account.updatedAt.toLocaleDateString()}</p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1 sm:gap-2">
                         <Button
                           variant="ghost"
                           size="sm"

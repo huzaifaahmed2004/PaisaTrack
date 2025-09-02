@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import "./globals.css"
+import { Toaster } from "@/components/ui/sonner"
 
 export const metadata: Metadata = {
   title: "PaisaTrack - Personal Finance Tracker",
@@ -24,6 +25,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} bg-background text-foreground`}>
         {children}
+        <Toaster richColors position="top-center" />
       </body>
     </html>
   )

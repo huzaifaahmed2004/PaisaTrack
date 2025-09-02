@@ -27,6 +27,7 @@ export interface Loan {
   date: Date
   createdAt: Date
   settledAt?: Date
+  accountId?: string
 }
 
 export interface User {

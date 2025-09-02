@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useTransactions } from "@/hooks/use-transactions"
+import { toast } from "sonner"
 
 interface AddTransactionModalProps {
   open: boolean
@@ -31,7 +32,9 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.accountId || !formData.amount || !formData.description) return
+    if (!formData.accountId) return toast.error("Please select an account")
+    if (!formData.amount) return toast.error("Please enter an amount")
+    if (!formData.description.trim()) return toast.error("Please enter a description")
 
     setLoading(true)
     try {
@@ -62,8 +65,10 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
         date: new Date().toISOString().split("T")[0],
       })
       onOpenChange(false)
+      toast.success(`${type === "income" ? "Income" : "Expense"} added`)
     } catch (error) {
       console.error("Error adding transaction:", error)
+      toast.error("Failed to add transaction")
     } finally {
       setLoading(false)
     }
@@ -100,6 +105,8 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
               id="amount"
               type="number"
               step="0.01"
+              min="0"
+              required
               value={formData.amount}
               onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
               placeholder="0.00"
@@ -109,6 +116,7 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
             <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
+              required
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="What was this for?"
@@ -120,6 +128,7 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
             <Input
               id="date"
               type="date"
+              required
               value={formData.date}
               onChange={(e) => setFormData({ ...formData, date: e.target.value })}
             />

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAccounts } from "@/hooks/use-accounts"
+import { toast } from "sonner"
 
 interface AddAccountModalProps {
   open: boolean
@@ -26,7 +27,10 @@ export function AddAccountModal({ open, onOpenChange }: AddAccountModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name || !formData.type || !formData.balance) return
+    if (!formData.name.trim()) return toast.error("Please enter an account name")
+    if (!formData.type) return toast.error("Please select an account type")
+    if (!formData.balance) return toast.error("Please enter an initial balance")
+    if (Number.parseFloat(formData.balance) < 0) return toast.error("Balance cannot be negative")
 
     setLoading(true)
     try {
@@ -43,8 +47,10 @@ export function AddAccountModal({ open, onOpenChange }: AddAccountModalProps) {
         balance: "",
       })
       onOpenChange(false)
+      toast.success("Account added")
     } catch (error) {
       console.error("Error adding account:", error)
+      toast.error("Failed to add account")
     } finally {
       setLoading(false)
     }
@@ -69,6 +75,7 @@ export function AddAccountModal({ open, onOpenChange }: AddAccountModalProps) {
             <Label htmlFor="name">Account Name</Label>
             <Input
               id="name"
+              required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="e.g., Main Wallet, Savings Account"
@@ -103,6 +110,8 @@ export function AddAccountModal({ open, onOpenChange }: AddAccountModalProps) {
               id="balance"
               type="number"
               step="0.01"
+              min="0"
+              required
               value={formData.balance}
               onChange={(e) => setFormData({ ...formData, balance: e.target.value })}
               placeholder="0.00"

@@ -111,7 +111,7 @@ export default function TransactionsPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border p-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
+        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
               <ArrowLeft className="h-4 w-4" />
@@ -211,28 +211,28 @@ export default function TransactionsPage() {
                   return (
                     <div
                       key={transaction.id}
-                      className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+                      className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
                     >
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-start md:items-center gap-4">
                         <div className="p-2 rounded-full bg-background">{getTransactionIcon(transaction.type)}</div>
-                        <div>
-                          <h3 className="font-medium">{transaction.description}</h3>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <span>{account?.name}</span>
-                            <span>•</span>
+                        <div className="min-w-0">
+                          <h3 className="font-medium truncate">{transaction.description}</h3>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                            <span className="truncate max-w-[140px] sm:max-w-[200px]">{account?.name}</span>
+                            <span className="hidden sm:inline">•</span>
                             <span className="capitalize">{transaction.type.replace("-", " ")}</span>
-                            <span>•</span>
+                            <span className="hidden sm:inline">•</span>
                             <span>{transaction.date.toLocaleDateString()}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-between md:justify-end gap-4">
                         <div className="text-right">
-                          <p className={`text-lg font-semibold ${getTransactionColor(transaction.type)}`}>
+                          <p className={`text-base sm:text-lg font-semibold ${getTransactionColor(transaction.type)}`}>
                             {getTransactionSign(transaction.type)}PKR {transaction.amount.toLocaleString()}
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1 sm:gap-2">
                           <Button
                             variant="ghost"
                             size="sm"

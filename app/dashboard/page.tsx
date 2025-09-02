@@ -10,18 +10,20 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddTransactionModal } from "@/components/add-transaction-modal"
 import { AddLoanModal } from "@/components/add-loan-modal"
-import { Loader2, LogOut, Plus, Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { Loader2, LogOut, Plus, Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight, ArrowLeftRight } from "lucide-react"
+import { TransferModal } from "@/components/transfer-modal"
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth()
   const { accounts, totalBalance } = useAccounts()
   const { recentTransactions } = useTransactions()
-  const { netLoanAmount } = useLoans()
+  const { netLoanAmount, loansGiven, loansTaken } = useLoans()
   const router = useRouter()
 
   const [incomeModalOpen, setIncomeModalOpen] = useState(false)
   const [spendModalOpen, setSpendModalOpen] = useState(false)
   const [loanModalOpen, setLoanModalOpen] = useState(false)
+  const [transferModalOpen, setTransferModalOpen] = useState(false)
 
   useEffect(() => {
     if (!user && !loading) {
@@ -112,7 +114,7 @@ export default function DashboardPage() {
             <CardTitle className="text-lg">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
               <Button
                 className="flex flex-col gap-2 h-auto py-4 bg-accent hover:bg-accent/90"
                 onClick={() => setIncomeModalOpen(true)}
@@ -132,14 +134,28 @@ export default function DashboardPage() {
               <Button
                 className="flex flex-col gap-2 h-auto py-4 bg-accent hover:bg-accent/90"
                 onClick={() => setLoanModalOpen(true)}
+                disabled={accounts.length === 0}
               >
                 <Users className="h-5 w-5" />
                 <span className="text-sm">Loan</span>
+              </Button>
+              <Button
+                className="flex flex-col gap-2 h-auto py-4 bg-accent hover:bg-accent/90"
+                onClick={() => setTransferModalOpen(true)}
+                disabled={accounts.length < 2}
+              >
+                <ArrowLeftRight className="h-5 w-5" />
+                <span className="text-sm">Transfer</span>
               </Button>
             </div>
             {accounts.length === 0 && (
               <p className="text-xs text-muted-foreground mt-2 text-center">
                 Add an account first to record transactions
+              </p>
+            )}
+            {accounts.length === 1 && (
+              <p className="text-xs text-muted-foreground mt-2 text-center">
+                You need at least two accounts to transfer between wallets
               </p>
             )}
           </CardContent>
@@ -173,6 +189,47 @@ export default function DashboardPage() {
                 <Wallet className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No accounts added yet</p>
                 <p className="text-sm">Add your first account to get started</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">Loans Summary</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => router.push("/loans")}>
+              View Loans
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {loansGiven.length + loansTaken.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">Pending Loans Given</p>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xl font-bold text-red-500">PKR {loansGiven
+                      .filter((l) => l.status === "pending")
+                      .reduce((s, l) => s + l.amount, 0)
+                      .toLocaleString()}</span>
+                    <span className="text-xs text-muted-foreground">{loansGiven.filter((l) => l.status === "pending").length} loan(s)</span>
+                  </div>
+                </div>
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">Pending Loans Taken</p>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xl font-bold text-green-500">PKR {loansTaken
+                      .filter((l) => l.status === "pending")
+                      .reduce((s, l) => s + l.amount, 0)
+                      .toLocaleString()}</span>
+                    <span className="text-xs text-muted-foreground">{loansTaken.filter((l) => l.status === "pending").length} loan(s)</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p>No loans recorded yet</p>
+                <p className="text-sm">Add a loan from Quick Actions</p>
               </div>
             )}
           </CardContent>
@@ -233,6 +290,7 @@ export default function DashboardPage() {
       <AddTransactionModal open={incomeModalOpen} onOpenChange={setIncomeModalOpen} type="income" />
       <AddTransactionModal open={spendModalOpen} onOpenChange={setSpendModalOpen} type="spend" />
       <AddLoanModal open={loanModalOpen} onOpenChange={setLoanModalOpen} />
+      <TransferModal open={transferModalOpen} onOpenChange={setTransferModalOpen} />
     </div>
   )
 }

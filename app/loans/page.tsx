@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { AddLoanModal } from "@/components/add-loan-modal"
 import { EditLoanModal } from "@/components/edit-loan-modal"
+import { SettleLoanModal } from "@/components/settle-loan-modal"
 import { Loader2, ArrowLeft, Plus, Edit, Trash2, Users, CheckCircle, Clock } from "lucide-react"
 import type { Loan } from "@/lib/types"
 
@@ -21,6 +22,8 @@ export default function LoansPage() {
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null)
+  const [settleModalOpen, setSettleModalOpen] = useState(false)
+  const [loanToSettle, setLoanToSettle] = useState<Loan | null>(null)
 
   useEffect(() => {
     if (!user && !loading) {
@@ -43,10 +46,14 @@ export default function LoansPage() {
     }
   }
 
-  const handleToggleStatus = async (loan: Loan) => {
-    const newStatus = loan.status === "pending" ? "settled" : "pending"
+  const handleOpenSettle = (loan: Loan) => {
+    setLoanToSettle(loan)
+    setSettleModalOpen(true)
+  }
+
+  const handleMarkPending = async (loan: Loan) => {
     try {
-      await updateLoan(loan.id, { status: newStatus })
+      await updateLoan(loan.id, { status: "pending" })
     } catch (error) {
       console.error("Error updating loan status:", error)
     }
@@ -79,9 +86,9 @@ export default function LoansPage() {
   const renderLoanCard = (loan: Loan) => (
     <div
       key={loan.id}
-      className="flex items-center justify-between p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+      className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-start md:items-center gap-4">
         <div className={`p-2 rounded-full ${loan.status === "pending" ? "bg-orange-500/20" : "bg-green-500/20"}`}>
           {loan.status === "pending" ? (
             <Clock className="h-4 w-4 text-orange-500" />
@@ -89,10 +96,10 @@ export default function LoansPage() {
             <CheckCircle className="h-4 w-4 text-green-500" />
           )}
         </div>
-        <div>
-          <h3 className="font-medium">{loan.personName}</h3>
-          <p className="text-sm text-muted-foreground">{loan.description}</p>
-          <div className="flex items-center gap-2 mt-1">
+        <div className="min-w-0">
+          <h3 className="font-medium truncate">{loan.personName}</h3>
+          <p className="text-sm text-muted-foreground break-words">{loan.description}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
             <span className="text-xs text-muted-foreground">{loan.date.toLocaleDateString()}</span>
             <Badge variant={loan.status === "pending" ? "destructive" : "secondary"} className="text-xs">
               {loan.status}
@@ -100,28 +107,35 @@ export default function LoansPage() {
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between md:justify-end gap-4">
         <div className="text-right">
-          <p className={`text-lg font-semibold ${loan.type === "given" ? "text-blue-500" : "text-orange-500"}`}>
+          <p className={`text-base sm:text-lg font-semibold ${loan.type === "given" ? "text-blue-500" : "text-orange-500"}`}>
             PKR {loan.amount.toLocaleString()}
           </p>
           {loan.settledAt && (
             <p className="text-xs text-muted-foreground">Settled {loan.settledAt.toLocaleDateString()}</p>
           )}
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleToggleStatus(loan)}
-            className={`text-xs ${
-              loan.status === "pending"
-                ? "text-green-600 hover:text-green-700"
-                : "text-orange-600 hover:text-orange-700"
-            }`}
-          >
-            {loan.status === "pending" ? "Mark Settled" : "Mark Pending"}
-          </Button>
+        <div className="flex gap-1 sm:gap-2">
+          {loan.status === "pending" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleOpenSettle(loan)}
+              className="text-xs text-green-600 hover:text-green-700"
+            >
+              Mark Settled
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleMarkPending(loan)}
+              className="text-xs text-orange-600 hover:text-orange-700"
+            >
+              Mark Pending
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -146,13 +160,13 @@ export default function LoansPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border p-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
+      <header className="border-b border-border p-4 md:p-6 lg:p-8">
+        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap md:flex-nowrap">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-xl font-bold">Loan Tracking</h1>
+            <h1 className="text-xl font-bold md:text-2xl lg:text-3xl">Loan Tracking</h1>
           </div>
           <Button onClick={() => setAddModalOpen(true)} className="bg-accent hover:bg-accent/90">
             <Plus className="h-4 w-4 mr-2" />
@@ -270,6 +284,7 @@ export default function LoansPage() {
         loan={selectedLoan}
         onClose={() => setSelectedLoan(null)}
       />
+      <SettleLoanModal open={settleModalOpen} onOpenChange={setSettleModalOpen} loan={loanToSettle} />
     </div>
   )
 }
