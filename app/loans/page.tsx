@@ -12,11 +12,13 @@ import { AddLoanModal } from "@/components/add-loan-modal"
 import { EditLoanModal } from "@/components/edit-loan-modal"
 import { SettleLoanModal } from "@/components/settle-loan-modal"
 import { Loader2, ArrowLeft, Plus, Edit, Trash2, Users, CheckCircle, Clock } from "lucide-react"
+import { formatPKR } from "@/lib/money"
+import { toast } from "sonner"
 import type { Loan } from "@/lib/types"
 
 export default function LoansPage() {
   const { user, loading } = useAuth()
-  const { loansGiven, loansTaken, deleteLoan, updateLoan } = useLoans()
+  const { loansGiven, loansTaken, deleteLoan, unsettleLoan, totalGivenPending, totalTakenPending } = useLoans()
   const router = useRouter()
 
   const [addModalOpen, setAddModalOpen] = useState(false)
@@ -36,12 +38,19 @@ export default function LoansPage() {
     setEditModalOpen(true)
   }
 
-  const handleDeleteLoan = async (loanId: string) => {
-    if (confirm("Are you sure you want to delete this loan record? This action cannot be undone.")) {
+  const handleDeleteLoan = async (loan: Loan) => {
+    const warning =
+      loan.carriedOver && loan.status === "pending"
+        ? "Delete this loan? It never moved money through an account, so no balance changes. This cannot be undone."
+        : "Delete this loan? Its entries will be removed and any money it moved will be put back on the account. This cannot be undone."
+
+    if (confirm(warning)) {
       try {
-        await deleteLoan(loanId)
-      } catch (error) {
+        await deleteLoan(loan)
+        toast.success("Loan deleted")
+      } catch (error: any) {
         console.error("Error deleting loan:", error)
+        toast.error(error?.message || "Failed to delete loan")
       }
     }
   }
@@ -52,10 +61,19 @@ export default function LoansPage() {
   }
 
   const handleMarkPending = async (loan: Loan) => {
+    if (!confirm("Reopen this loan? The settlement will be reversed on the account it was settled into.")) return
+
     try {
-      await updateLoan(loan.id, { status: "pending" })
-    } catch (error) {
+      // Reopening has to undo the settlement, or the money would be counted twice.
+      const reversed = await unsettleLoan(loan)
+      toast.success(
+        reversed
+          ? "Loan reopened as pending"
+          : "Loan reopened as pending. No linked settlement entry was found, so check the account balance yourself.",
+      )
+    } catch (error: any) {
       console.error("Error updating loan status:", error)
+      toast.error(error?.message || "Failed to reopen loan")
     }
   }
 
@@ -63,9 +81,6 @@ export default function LoansPage() {
   const settledGiven = loansGiven.filter((loan) => loan.status === "settled")
   const pendingTaken = loansTaken.filter((loan) => loan.status === "pending")
   const settledTaken = loansTaken.filter((loan) => loan.status === "settled")
-
-  const totalGivenPending = pendingGiven.reduce((sum, loan) => sum + loan.amount, 0)
-  const totalTakenPending = pendingTaken.reduce((sum, loan) => sum + loan.amount, 0)
 
   if (loading) {
     return (
@@ -104,13 +119,18 @@ export default function LoansPage() {
             <Badge variant={loan.status === "pending" ? "destructive" : "secondary"} className="text-xs">
               {loan.status}
             </Badge>
+            {loan.carriedOver && (
+              <Badge variant="outline" className="text-xs" title="Recorded as an existing loan - no account balance was changed">
+                existing
+              </Badge>
+            )}
           </div>
         </div>
       </div>
       <div className="flex items-center justify-between md:justify-end gap-4">
         <div className="text-right">
           <p className={`text-base sm:text-lg font-semibold ${loan.type === "given" ? "text-blue-500" : "text-orange-500"}`}>
-            PKR {loan.amount.toLocaleString()}
+            PKR {formatPKR(loan.amount)}
           </p>
           {loan.settledAt && (
             <p className="text-xs text-muted-foreground">Settled {loan.settledAt.toLocaleDateString()}</p>
@@ -147,7 +167,7 @@ export default function LoansPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => handleDeleteLoan(loan.id)}
+            onClick={() => handleDeleteLoan(loan)}
             className="text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-4 w-4" />
@@ -183,7 +203,7 @@ export default function LoansPage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Money Lent Out</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-500">PKR {totalGivenPending.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-blue-500">PKR {formatPKR(totalGivenPending)}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 {pendingGiven.length} pending loan{pendingGiven.length !== 1 ? "s" : ""}
               </p>
@@ -194,7 +214,7 @@ export default function LoansPage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Money Borrowed</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-500">PKR {totalTakenPending.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-orange-500">PKR {formatPKR(totalTakenPending)}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 {pendingTaken.length} pending loan{pendingTaken.length !== 1 ? "s" : ""}
               </p>

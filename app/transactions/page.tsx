@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { EditTransactionModal } from "@/components/edit-transaction-modal"
 import { Loader2, ArrowLeft, Filter, ArrowUpRight, ArrowDownRight, Edit, Trash2, TrendingUp } from "lucide-react"
+import { endOfDay, formatPKR, startOfDay, transactionSign } from "@/lib/money"
+import { toast } from "sonner"
 import type { Transaction } from "@/lib/types"
 
 export default function TransactionsPage() {
@@ -39,12 +41,19 @@ export default function TransactionsPage() {
     setEditModalOpen(true)
   }
 
-  const handleDeleteTransaction = async (transactionId: string) => {
-    if (confirm("Are you sure you want to delete this transaction? This action cannot be undone.")) {
+  const handleDeleteTransaction = async (transaction: Transaction) => {
+    const warning = transaction.transferId
+      ? "Delete this transfer? Both sides will be removed and the balances put back."
+      : "Delete this transaction? The amount will be put back on its account. This cannot be undone."
+
+    if (confirm(warning)) {
       try {
-        await deleteTransaction(transactionId)
-      } catch (error) {
+        // Removing an entry also reverses the money it moved.
+        await deleteTransaction(transaction)
+        toast.success("Transaction deleted")
+      } catch (error: any) {
         console.error("Error deleting transaction:", error)
+        toast.error(error?.message || "Failed to delete transaction")
       }
     }
   }
@@ -52,8 +61,9 @@ export default function TransactionsPage() {
   const filteredTransactions = transactions.filter((transaction) => {
     if (filters.account !== "all" && transaction.accountId !== filters.account) return false
     if (filters.type !== "all" && transaction.type !== filters.type) return false
-    if (filters.dateFrom && transaction.date < new Date(filters.dateFrom)) return false
-    if (filters.dateTo && transaction.date > new Date(filters.dateTo)) return false
+    // Both bounds are inclusive of the day the user picked, in local time.
+    if (filters.dateFrom && transaction.date < startOfDay(filters.dateFrom)) return false
+    if (filters.dateTo && transaction.date > endOfDay(filters.dateTo)) return false
     return true
   })
 
@@ -85,10 +95,6 @@ export default function TransactionsPage() {
       default:
         return "text-foreground"
     }
-  }
-
-  const getTransactionSign = (type: string) => {
-    return type === "income" || type === "loan-taken" ? "+" : "-"
   }
 
   if (loading) {
@@ -229,7 +235,7 @@ export default function TransactionsPage() {
                       <div className="flex items-center justify-between md:justify-end gap-4">
                         <div className="text-right">
                           <p className={`text-base sm:text-lg font-semibold ${getTransactionColor(transaction.type)}`}>
-                            {getTransactionSign(transaction.type)}PKR {transaction.amount.toLocaleString()}
+                            {transactionSign(transaction.type)}PKR {formatPKR(transaction.amount)}
                           </p>
                         </div>
                         <div className="flex gap-1 sm:gap-2">
@@ -237,6 +243,18 @@ export default function TransactionsPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEditTransaction(transaction)}
+                            disabled={
+                              !!transaction.loanId || !!transaction.transferId || !!transaction.subscriptionId
+                            }
+                            title={
+                              transaction.loanId
+                                ? "Edit this from the Loans page"
+                                : transaction.subscriptionId
+                                  ? "Edit this from the Subscriptions page"
+                                  : transaction.transferId
+                                    ? "Transfers cannot be edited - delete and record it again"
+                                    : "Edit transaction"
+                            }
                             className="text-muted-foreground hover:text-foreground"
                           >
                             <Edit className="h-4 w-4" />
@@ -244,7 +262,15 @@ export default function TransactionsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteTransaction(transaction.id)}
+                            onClick={() => handleDeleteTransaction(transaction)}
+                            disabled={!!transaction.loanId || !!transaction.subscriptionId}
+                            title={
+                              transaction.loanId
+                                ? "Delete this from the Loans page"
+                                : transaction.subscriptionId
+                                  ? "Undo this from the Subscriptions page"
+                                  : "Delete transaction"
+                            }
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="h-4 w-4" />

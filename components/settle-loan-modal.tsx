@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { toast } from "sonner"
 import { db } from "@/lib/firebase"
 import { collection, doc, runTransaction, serverTimestamp } from "firebase/firestore"
+import { formatPKR, round2, toAmount } from "@/lib/money"
 import type { Loan } from "@/lib/types"
 
 interface SettleLoanModalProps {
@@ -35,6 +36,7 @@ export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalPro
     if (!user) return toast.error("You must be signed in")
     if (!loan) return toast.error("No loan selected")
     if (!accountId) return toast.error("Please select an account")
+    if (loan.status === "settled") return toast.error("This loan is already settled")
 
     const selectedAccount = accounts.find((a) => a.id === accountId)
     if (!selectedAccount) return toast.error("Account not found")
@@ -45,11 +47,11 @@ export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalPro
         const accRef = doc(db, "users", user.uid, "accounts", selectedAccount.id)
         const accSnap = await tx.get(accRef)
         if (!accSnap.exists()) throw new Error("Account not found")
-        const currentBal = Number(accSnap.data().balance) || 0
+        const currentBal = toAmount(accSnap.data().balance)
 
-        const amount = Number(loan.amount)
+        const amount = round2(toAmount(loan.amount))
         const isGiven = loan.type === "given" // we lent; settlement adds money in
-        const newBal = isGiven ? currentBal + amount : currentBal - amount
+        const newBal = round2(isGiven ? currentBal + amount : currentBal - amount)
         if (!isGiven && newBal < 0) throw new Error("Insufficient balance to settle this loan")
 
         tx.update(accRef, { balance: newBal, updatedAt: serverTimestamp() })
@@ -68,6 +70,9 @@ export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalPro
           description: `Loan settlement with ${loan.personName} - ${loan.description}`,
           date: new Date(),
           createdAt: serverTimestamp(),
+          // Tagged so the settlement can be reversed if the loan is reopened.
+          loanId: loan.id,
+          loanEntry: "settlement",
         })
       })
 
@@ -90,6 +95,13 @@ export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalPro
           <DialogTitle>Mark Loan as Settled</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {loan && (
+            <p className="text-sm text-muted-foreground">
+              {isGiven
+                ? `PKR ${formatPKR(loan.amount)} from ${loan.personName} comes back into the account you pick.`
+                : `PKR ${formatPKR(loan.amount)} is paid to ${loan.personName} out of the account you pick.`}
+            </p>
+          )}
           <div className="space-y-2">
             <Label>Account</Label>
             <Select value={accountId} onValueChange={setAccountId}>
@@ -99,7 +111,7 @@ export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalPro
               <SelectContent>
                 {accounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.name}
+                    {a.name} (PKR {formatPKR(a.balance)})
                   </SelectItem>
                 ))}
               </SelectContent>

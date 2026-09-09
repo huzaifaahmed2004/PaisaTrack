@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useTransactions } from "@/hooks/use-transactions"
+import { formatPKR, parseDateInput, toDateInput } from "@/lib/money"
+import { toast } from "sonner"
 import type { Transaction } from "@/lib/types"
 
 interface EditTransactionModalProps {
@@ -21,7 +23,7 @@ interface EditTransactionModalProps {
 }
 
 export function EditTransactionModal({ open, onOpenChange, transaction, onClose }: EditTransactionModalProps) {
-  const { accounts, updateAccount } = useAccounts()
+  const { accounts } = useAccounts()
   const { updateTransaction } = useTransactions()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -39,60 +41,39 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onClose 
         type: transaction.type,
         amount: transaction.amount.toString(),
         description: transaction.description,
-        date: transaction.date.toISOString().split("T")[0],
+        date: toDateInput(transaction.date),
       })
     }
   }, [transaction])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!transaction || !formData.accountId || !formData.type || !formData.amount || !formData.description) return
+    if (!transaction) return
+    if (!formData.accountId) return toast.error("Please select an account")
+    if (!formData.type) return toast.error("Please select a type")
+    if (!formData.description.trim()) return toast.error("Please enter a description")
+
+    const amount = Number.parseFloat(formData.amount)
+    if (!Number.isFinite(amount) || amount <= 0) return toast.error("Enter a valid amount greater than 0")
 
     setLoading(true)
     try {
-      const newAmount = Number.parseFloat(formData.amount)
-      const oldAmount = transaction.amount
-      const oldType = transaction.type
-      const newType = formData.type
-
-      // Update transaction
-      await updateTransaction(transaction.id, {
+      // Reversing the old effect and applying the new one happens atomically
+      // inside the hook, against the balances as they are stored right now.
+      await updateTransaction(transaction, {
         accountId: formData.accountId,
         type: formData.type,
-        amount: newAmount,
+        amount,
         description: formData.description,
-        date: new Date(formData.date),
+        date: parseDateInput(formData.date),
       })
 
-      // Update account balance if amount or type changed
-      if (oldAmount !== newAmount || oldType !== newType || transaction.accountId !== formData.accountId) {
-        // Revert old transaction effect
-        const oldAccount = accounts.find((acc) => acc.id === transaction.accountId)
-        if (oldAccount) {
-          const revertedBalance =
-            oldType === "income" || oldType === "loan-taken"
-              ? oldAccount.balance - oldAmount
-              : oldAccount.balance + oldAmount
-
-          await updateAccount(transaction.accountId, { balance: revertedBalance })
-        }
-
-        // Apply new transaction effect
-        const newAccount = accounts.find((acc) => acc.id === formData.accountId)
-        if (newAccount) {
-          const newBalance =
-            newType === "income" || newType === "loan-taken"
-              ? newAccount.balance + newAmount
-              : newAccount.balance - newAmount
-
-          await updateAccount(formData.accountId, { balance: newBalance })
-        }
-      }
-
+      toast.success("Transaction updated")
       onOpenChange(false)
       onClose()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating transaction:", error)
+      toast.error(error?.message || "Failed to update transaction")
     } finally {
       setLoading(false)
     }
@@ -117,7 +98,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onClose 
               <SelectContent>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.name} (PKR {account.balance.toLocaleString()})
+                    {account.name} (PKR {formatPKR(account.balance)})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -148,6 +129,8 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onClose 
               id="amount"
               type="number"
               step="0.01"
+              min="0.01"
+              required
               value={formData.amount}
               onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
               placeholder="0.00"

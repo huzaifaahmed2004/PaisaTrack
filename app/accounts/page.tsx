@@ -9,11 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddAccountModal } from "@/components/add-account-modal"
 import { EditAccountModal } from "@/components/edit-account-modal"
 import { Loader2, ArrowLeft, Plus, Edit, Trash2, Wallet } from "lucide-react"
+import { formatPKR } from "@/lib/money"
+import { accountTypeIcon, accountTypeLabel } from "@/lib/account-types"
+import { toast } from "sonner"
 import type { Account } from "@/lib/types"
 
 export default function AccountsPage() {
   const { user, loading } = useAuth()
-  const { accounts, totalBalance, deleteAccount } = useAccounts()
+  const { accounts, totalBalance, deleteAccount, countAccountTransactions } = useAccounts()
   const router = useRouter()
 
   const [addModalOpen, setAddModalOpen] = useState(false)
@@ -31,28 +34,22 @@ export default function AccountsPage() {
     setEditModalOpen(true)
   }
 
-  const handleDeleteAccount = async (accountId: string) => {
-    if (confirm("Are you sure you want to delete this account? This action cannot be undone.")) {
-      try {
-        await deleteAccount(accountId)
-      } catch (error) {
-        console.error("Error deleting account:", error)
-      }
-    }
-  }
+  const handleDeleteAccount = async (account: Account) => {
+    try {
+      // Entries belonging to this account go with it, so say how many.
+      const entryCount = await countAccountTransactions(account.id)
+      const warning =
+        entryCount > 0
+          ? `Delete "${account.name}"? Its ${entryCount} transaction${entryCount !== 1 ? "s" : ""} will be deleted too, and PKR ${formatPKR(account.balance)} will drop out of your totals. This cannot be undone.`
+          : `Delete "${account.name}"? This cannot be undone.`
 
-  const getAccountIcon = (type: string) => {
-    switch (type) {
-      case "cash":
-        return "💵"
-      case "bank":
-        return "🏦"
-      case "nayapay":
-        return "📱"
-      case "sadapay":
-        return "💳"
-      default:
-        return "💰"
+      if (!confirm(warning)) return
+
+      await deleteAccount(account.id)
+      toast.success("Account deleted")
+    } catch (error: any) {
+      console.error("Error deleting account:", error)
+      toast.error(error?.message || "Failed to delete account")
     }
   }
 
@@ -97,7 +94,7 @@ export default function AccountsPage() {
             <CardTitle className="text-lg">Total Balance</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-accent">PKR {totalBalance.toLocaleString()}</div>
+            <div className="text-3xl font-bold text-accent">PKR {formatPKR(totalBalance)}</div>
             <p className="text-sm text-muted-foreground mt-1">
               Across {accounts.length} account{accounts.length !== 1 ? "s" : ""}
             </p>
@@ -119,16 +116,16 @@ export default function AccountsPage() {
                   >
                     <div className="flex items-start md:items-center gap-4 min-w-0">
                       <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center text-xl shrink-0">
-                        {getAccountIcon(account.type)}
+                        {accountTypeIcon(account.type)}
                       </div>
                       <div className="min-w-0">
                         <h3 className="font-semibold text-lg truncate">{account.name}</h3>
-                        <p className="text-sm text-muted-foreground capitalize">{account.type} Account</p>
+                        <p className="text-sm text-muted-foreground">{accountTypeLabel(account.type)}</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-between md:justify-end gap-4">
                       <div className="text-right">
-                        <p className="text-base sm:text-xl font-bold">PKR {account.balance.toLocaleString()}</p>
+                        <p className="text-base sm:text-xl font-bold">PKR {formatPKR(account.balance)}</p>
                         <p className="text-xs text-muted-foreground">Updated {account.updatedAt.toLocaleDateString()}</p>
                       </div>
                       <div className="flex gap-1 sm:gap-2">
@@ -143,7 +140,7 @@ export default function AccountsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDeleteAccount(account.id)}
+                          onClick={() => handleDeleteAccount(account)}
                           className="text-muted-foreground hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />

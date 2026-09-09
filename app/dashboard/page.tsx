@@ -10,20 +10,34 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddTransactionModal } from "@/components/add-transaction-modal"
 import { AddLoanModal } from "@/components/add-loan-modal"
-import { Loader2, LogOut, Plus, Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight, ArrowLeftRight } from "lucide-react"
+import { Loader2, LogOut, Plus, Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2, RefreshCw, PiggyBank } from "lucide-react"
 import { TransferModal } from "@/components/transfer-modal"
+import { ClearDataModal } from "@/components/clear-data-modal"
+import { PaySubscriptionModal } from "@/components/pay-subscription-modal"
+import { useGoals } from "@/hooks/use-goals"
+import { Progress } from "@/components/ui/progress"
+import { useSubscriptions } from "@/hooks/use-subscriptions"
+import { dueStatusLabel } from "@/lib/recurrence"
+import { Badge } from "@/components/ui/badge"
+import { formatPKR, round2, transactionSign } from "@/lib/money"
+import type { Subscription } from "@/lib/types"
+import { accountTypeLabel } from "@/lib/account-types"
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth()
   const { accounts, totalBalance } = useAccounts()
-  const { recentTransactions } = useTransactions()
-  const { netLoanAmount, loansGiven, loansTaken } = useLoans()
+  const { transactions, recentTransactions } = useTransactions()
+  const { loans, netLoanAmount, totalGivenPending, totalTakenPending } = useLoans()
+  const { subscriptions, dueSubscriptions, dueTotal, monthlyTotal, activeSubscriptions } = useSubscriptions()
+  const { goals, activeGoals, totalReserved } = useGoals()
   const router = useRouter()
 
   const [incomeModalOpen, setIncomeModalOpen] = useState(false)
   const [spendModalOpen, setSpendModalOpen] = useState(false)
   const [loanModalOpen, setLoanModalOpen] = useState(false)
   const [transferModalOpen, setTransferModalOpen] = useState(false)
+  const [clearDataOpen, setClearDataOpen] = useState(false)
+  const [payingSubscription, setPayingSubscription] = useState<Subscription | null>(null)
 
   useEffect(() => {
     if (!user && !loading) {
@@ -56,7 +70,15 @@ export default function DashboardPage() {
     )
   }
 
+  // Balances already reflect cash that moved, so only the outstanding side of
+  // each pending loan is added on top: what you are owed, less what you owe.
   const netWorth = totalBalance + netLoanAmount
+  const hasLoans = loans.length > 0
+  const loansGivenPending = loans.filter((loan) => loan.type === "given" && loan.status === "pending").length
+  const loansTakenPending = loans.filter((loan) => loan.type === "taken" && loan.status === "pending").length
+  const pausedCount = subscriptions.length - activeSubscriptions.length
+  // What is genuinely free: the balance no savings plan has claimed.
+  const freeToSpend = round2(totalBalance - totalReserved)
 
   return (
     <div className="min-h-screen bg-background">
@@ -88,14 +110,18 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">Let's track your finances</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Balance</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">PKR {totalBalance.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground mt-1">All accounts combined</p>
+              <div className="text-2xl font-bold">PKR {formatPKR(totalBalance)}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {totalReserved > 0
+                  ? `PKR ${formatPKR(freeToSpend)} free - PKR ${formatPKR(totalReserved)} set aside`
+                  : "All accounts combined"}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -103,8 +129,23 @@ export default function DashboardPage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Net Worth</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">PKR {netWorth.toLocaleString()}</div>
+              <div className="text-2xl font-bold">PKR {formatPKR(netWorth)}</div>
               <p className="text-xs text-muted-foreground mt-1">Including loans</p>
+            </CardContent>
+          </Card>
+          <Card className={dueSubscriptions.length > 0 ? "border-orange-500/40" : undefined}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Subscriptions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">PKR {formatPKR(monthlyTotal)}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {dueSubscriptions.length > 0 ? (
+                  <span className="text-orange-500 font-medium">PKR {formatPKR(dueTotal)} due now</span>
+                ) : (
+                  `Every month across ${activeSubscriptions.length} bill${activeSubscriptions.length !== 1 ? "s" : ""}`
+                )}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -134,7 +175,6 @@ export default function DashboardPage() {
               <Button
                 className="flex flex-col gap-2 h-auto py-4 bg-accent hover:bg-accent/90"
                 onClick={() => setLoanModalOpen(true)}
-                disabled={accounts.length === 0}
               >
                 <Users className="h-5 w-5" />
                 <span className="text-sm">Loan</span>
@@ -150,7 +190,7 @@ export default function DashboardPage() {
             </div>
             {accounts.length === 0 && (
               <p className="text-xs text-muted-foreground mt-2 text-center">
-                Add an account first to record transactions
+                Add an account first to record transactions. Existing loans can be entered without one.
               </p>
             )}
             {accounts.length === 1 && (
@@ -176,10 +216,10 @@ export default function DashboardPage() {
                   <div key={account.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <div>
                       <h3 className="font-medium">{account.name}</h3>
-                      <p className="text-sm text-muted-foreground capitalize">{account.type}</p>
+                      <p className="text-sm text-muted-foreground">{accountTypeLabel(account.type)}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold">PKR {account.balance.toLocaleString()}</p>
+                      <p className="font-semibold">PKR {formatPKR(account.balance)}</p>
                     </div>
                   </div>
                 ))}
@@ -202,26 +242,24 @@ export default function DashboardPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {loansGiven.length + loansTaken.length > 0 ? (
+            {hasLoans ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground mb-1">Pending Loans Given</p>
+                  <p className="text-sm text-muted-foreground mb-1">Owed to you</p>
                   <div className="flex items-baseline justify-between">
-                    <span className="text-xl font-bold text-red-500">PKR {loansGiven
-                      .filter((l) => l.status === "pending")
-                      .reduce((s, l) => s + l.amount, 0)
-                      .toLocaleString()}</span>
-                    <span className="text-xs text-muted-foreground">{loansGiven.filter((l) => l.status === "pending").length} loan(s)</span>
+                    <span className="text-xl font-bold text-green-500">PKR {formatPKR(totalGivenPending)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {loansGivenPending} loan{loansGivenPending !== 1 ? "s" : ""}
+                    </span>
                   </div>
                 </div>
                 <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground mb-1">Pending Loans Taken</p>
+                  <p className="text-sm text-muted-foreground mb-1">You owe</p>
                   <div className="flex items-baseline justify-between">
-                    <span className="text-xl font-bold text-green-500">PKR {loansTaken
-                      .filter((l) => l.status === "pending")
-                      .reduce((s, l) => s + l.amount, 0)
-                      .toLocaleString()}</span>
-                    <span className="text-xs text-muted-foreground">{loansTaken.filter((l) => l.status === "pending").length} loan(s)</span>
+                    <span className="text-xl font-bold text-red-500">PKR {formatPKR(totalTakenPending)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {loansTakenPending} loan{loansTakenPending !== 1 ? "s" : ""}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -230,6 +268,119 @@ export default function DashboardPage() {
                 <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
                 <p>No loans recorded yet</p>
                 <p className="text-sm">Add a loan from Quick Actions</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">Savings Plans</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => router.push("/goals")}>
+              <PiggyBank className="h-4 w-4 mr-2" />
+              Manage
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {activeGoals.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  <span className="text-lg font-bold text-foreground">PKR {formatPKR(totalReserved)}</span> set aside,
+                  leaving PKR {formatPKR(freeToSpend)} free to spend
+                </p>
+                {activeGoals.slice(0, 3).map((goal) => {
+                  const progress =
+                    goal.targetAmount > 0 ? Math.min((goal.savedAmount / goal.targetAmount) * 100, 100) : 0
+
+                  return (
+                    <div key={goal.id} className="p-3 bg-muted rounded-lg space-y-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className="font-medium truncate">{goal.name}</h3>
+                        <p className="text-sm whitespace-nowrap">
+                          <span className="font-semibold">PKR {formatPKR(goal.savedAmount)}</span>
+                          <span className="text-muted-foreground"> of {formatPKR(goal.targetAmount)}</span>
+                        </p>
+                      </div>
+                      <Progress value={progress} className="h-2" />
+                    </div>
+                  )
+                })}
+                {activeGoals.length > 3 && (
+                  <p className="text-xs text-muted-foreground">
+                    +{activeGoals.length - 3} more plan{activeGoals.length - 3 !== 1 ? "s" : ""}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                <PiggyBank className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p>No savings plans yet</p>
+                <p className="text-sm">Set money aside for the things you are planning</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={dueSubscriptions.length > 0 ? "border-orange-500/40" : undefined}>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">Monthly Subscriptions</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => router.push("/subscriptions")}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Manage
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {activeSubscriptions.length > 0 ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 pb-1">
+                  <p className="text-sm text-muted-foreground">
+                    <span className="text-lg font-bold text-foreground">PKR {formatPKR(monthlyTotal)}</span> a month
+                    across {activeSubscriptions.length} subscription{activeSubscriptions.length !== 1 ? "s" : ""}
+                  </p>
+                  {dueSubscriptions.length > 0 && (
+                    <p className="text-sm font-medium text-orange-500">PKR {formatPKR(dueTotal)} waiting to be paid</p>
+                  )}
+                </div>
+
+                {dueSubscriptions.length > 0 ? (
+                  dueSubscriptions.map((subscription) => (
+                    <div
+                      key={subscription.id}
+                      className="flex flex-wrap items-center justify-between gap-3 p-3 bg-muted rounded-lg"
+                    >
+                      <div className="min-w-0">
+                        <h3 className="font-medium truncate">{subscription.name}</h3>
+                        <Badge variant="destructive" className="text-xs mt-1">
+                          {dueStatusLabel(subscription.nextDueDate)}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <p className="font-semibold whitespace-nowrap">PKR {formatPKR(subscription.amount)}</p>
+                        <Button
+                          size="sm"
+                          className="bg-accent hover:bg-accent/90"
+                          onClick={() => setPayingSubscription(subscription)}
+                        >
+                          Mark Paid
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">Nothing due right now.</p>
+                )}
+
+                {pausedCount > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {pausedCount} paused subscription{pausedCount !== 1 ? "s" : ""} not counted above
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                <RefreshCw className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p>No subscriptions yet</p>
+                <p className="text-sm">Track rent, internet, streaming and other monthly bills</p>
               </div>
             )}
           </CardContent>
@@ -247,13 +398,13 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 {recentTransactions.map((transaction) => {
                   const account = accounts.find((acc) => acc.id === transaction.accountId)
-                  const isIncome = transaction.type === "income"
+                  const isMoneyIn = transactionSign(transaction.type) === "+"
 
                   return (
                     <div key={transaction.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-full ${isIncome ? "bg-green-500/20" : "bg-red-500/20"}`}>
-                          {isIncome ? (
+                        <div className={`p-2 rounded-full ${isMoneyIn ? "bg-green-500/20" : "bg-red-500/20"}`}>
+                          {isMoneyIn ? (
                             <ArrowUpRight className="h-4 w-4 text-green-500" />
                           ) : (
                             <ArrowDownRight className="h-4 w-4 text-red-500" />
@@ -267,8 +418,8 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className={`font-semibold ${isIncome ? "text-green-500" : "text-red-500"}`}>
-                          {isIncome ? "+" : "-"}PKR {transaction.amount.toLocaleString()}
+                        <p className={`font-semibold ${isMoneyIn ? "text-green-500" : "text-red-500"}`}>
+                          {transactionSign(transaction.type)}PKR {formatPKR(transaction.amount)}
                         </p>
                       </div>
                     </div>
@@ -284,6 +435,24 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-lg">Danger Zone</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-medium">Clear all data</p>
+              <p className="text-sm text-muted-foreground">
+                Delete every account, transaction and loan, and start over from scratch.
+              </p>
+            </div>
+            <Button variant="destructive" onClick={() => setClearDataOpen(true)} className="shrink-0">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Clear Data
+            </Button>
+          </CardContent>
+        </Card>
       </main>
 
       {/* Modals */}
@@ -291,6 +460,21 @@ export default function DashboardPage() {
       <AddTransactionModal open={spendModalOpen} onOpenChange={setSpendModalOpen} type="spend" />
       <AddLoanModal open={loanModalOpen} onOpenChange={setLoanModalOpen} />
       <TransferModal open={transferModalOpen} onOpenChange={setTransferModalOpen} />
+      <PaySubscriptionModal
+        open={!!payingSubscription}
+        onOpenChange={(open) => !open && setPayingSubscription(null)}
+        subscription={payingSubscription}
+        onClose={() => setPayingSubscription(null)}
+      />
+      <ClearDataModal
+        open={clearDataOpen}
+        onOpenChange={setClearDataOpen}
+        accountCount={accounts.length}
+        transactionCount={transactions.length}
+        loanCount={loans.length}
+        subscriptionCount={subscriptions.length}
+        goalCount={goals.length}
+      />
     </div>
   )
 }

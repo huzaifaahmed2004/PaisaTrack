@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAccounts } from "@/hooks/use-accounts"
+import { ACCOUNT_TYPES } from "@/lib/account-types"
+import type { AccountType } from "@/lib/types"
+import { toast } from "sonner"
 import type { Account } from "@/lib/types"
 
 interface EditAccountModalProps {
@@ -23,7 +26,7 @@ export function EditAccountModal({ open, onOpenChange, account, onClose }: EditA
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
-    type: "" as "cash" | "bank" | "nayapay" | "sadapay" | "other" | "",
+    type: "" as AccountType | "",
     balance: "",
   })
 
@@ -39,32 +42,32 @@ export function EditAccountModal({ open, onOpenChange, account, onClose }: EditA
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!account || !formData.name || !formData.type || !formData.balance) return
+    if (!account) return
+    if (!formData.name.trim()) return toast.error("Please enter an account name")
+    if (!formData.type) return toast.error("Please select an account type")
+
+    const balance = Number.parseFloat(formData.balance)
+    if (!Number.isFinite(balance)) return toast.error("Please enter a valid balance")
+    if (balance < 0) return toast.error("Balance cannot be negative")
 
     setLoading(true)
     try {
       await updateAccount(account.id, {
         name: formData.name,
         type: formData.type,
-        balance: Number.parseFloat(formData.balance),
+        balance,
       })
 
+      toast.success("Account updated")
       onOpenChange(false)
       onClose()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating account:", error)
+      toast.error(error?.message || "Failed to update account")
     } finally {
       setLoading(false)
     }
   }
-
-  const accountTypes = [
-    { value: "cash", label: "Cash", icon: "💵" },
-    { value: "bank", label: "Bank Account", icon: "🏦" },
-    { value: "nayapay", label: "NayaPay", icon: "📱" },
-    { value: "sadapay", label: "SadaPay", icon: "💳" },
-    { value: "other", label: "Other", icon: "💰" },
-  ]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -86,7 +89,7 @@ export function EditAccountModal({ open, onOpenChange, account, onClose }: EditA
             <Label htmlFor="type">Account Type</Label>
             <Select
               value={formData.type}
-              onValueChange={(value: "cash" | "bank" | "nayapay" | "sadapay" | "other") =>
+              onValueChange={(value: AccountType) =>
                 setFormData({ ...formData, type: value })
               }
             >
@@ -94,7 +97,7 @@ export function EditAccountModal({ open, onOpenChange, account, onClose }: EditA
                 <SelectValue placeholder="Select account type" />
               </SelectTrigger>
               <SelectContent>
-                {accountTypes.map((type) => (
+                {ACCOUNT_TYPES.map((type) => (
                   <SelectItem key={type.value} value={type.value}>
                     <div className="flex items-center gap-2">
                       <span>{type.icon}</span>

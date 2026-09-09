@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
 import { db } from "@/lib/firebase"
 import { collection, doc, runTransaction, serverTimestamp } from "firebase/firestore"
+import { formatPKR, parseDateInput, round2, toAmount, toDateInput } from "@/lib/money"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
 
@@ -28,14 +29,14 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
     toAccountId: "",
     amount: "",
     description: "",
-    date: new Date().toISOString().split("T")[0],
+    date: toDateInput(new Date()),
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // Basic validations
-    const amount = Number.parseFloat(formData.amount)
+    const amount = round2(Number.parseFloat(formData.amount))
     if (!user) return toast.error("You must be signed in to transfer funds")
     if (!formData.fromAccountId) return toast.error("Please select the source account")
     if (!formData.toAccountId) return toast.error("Please select the destination account")
@@ -61,22 +62,24 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
         const toSnap = await tx.get(toRef)
         if (!fromSnap.exists() || !toSnap.exists()) throw new Error("Account documents missing")
 
-        const fromBal = (fromSnap.data().balance as number) ?? 0
-        const toBal = (toSnap.data().balance as number) ?? 0
+        const fromBal = toAmount(fromSnap.data().balance)
+        const toBal = toAmount(toSnap.data().balance)
         if (fromBal < amount) throw new Error("Insufficient balance in source account")
 
         // Update balances
-        tx.update(fromRef, { balance: fromBal - amount, updatedAt: serverTimestamp() })
-        tx.update(toRef, { balance: toBal + amount, updatedAt: serverTimestamp() })
+        tx.update(fromRef, { balance: round2(fromBal - amount), updatedAt: serverTimestamp() })
+        tx.update(toRef, { balance: round2(toBal + amount), updatedAt: serverTimestamp() })
 
         // Create mirrored transactions under each account's user path
-        const date = new Date(formData.date)
+        const date = parseDateInput(formData.date)
 
         const fromTxCol = collection(db, "users", user.uid, "transactions")
         const toTxCol = collection(db, "users", user.uid, "transactions")
 
         const outTxRef = doc(fromTxCol)
         const inTxRef = doc(toTxCol)
+        // Shared id so the pair is always deleted and reversed together.
+        const transferId = outTxRef.id
 
         tx.set(outTxRef, {
           accountId: from.id,
@@ -85,6 +88,7 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
           description: formData.description + ` → ${to.name}`,
           date,
           createdAt: serverTimestamp(),
+          transferId,
         })
 
         tx.set(inTxRef, {
@@ -94,12 +98,13 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
           description: formData.description + ` ← ${from.name}`,
           date,
           createdAt: serverTimestamp(),
+          transferId,
         })
       })
 
       toast.success("Transfer completed")
       // Reset and close
-      setFormData({ fromAccountId: "", toAccountId: "", amount: "", description: "", date: new Date().toISOString().split("T")[0] })
+      setFormData({ fromAccountId: "", toAccountId: "", amount: "", description: "", date: toDateInput(new Date()) })
       onOpenChange(false)
     } catch (err: any) {
       console.error("Transfer failed:", err)
@@ -128,7 +133,7 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
               <SelectContent>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.name} (PKR {account.balance.toLocaleString()})
+                    {account.name} (PKR {formatPKR(account.balance)})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -147,7 +152,7 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
               <SelectContent>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.name} (PKR {account.balance.toLocaleString()})
+                    {account.name} (PKR {formatPKR(account.balance)})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -160,7 +165,7 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
               id="amount"
               type="number"
               step="0.01"
-              min="0"
+              min="0.01"
               required
               value={formData.amount}
               onChange={(e) => setFormData({ ...formData, amount: e.target.value })}

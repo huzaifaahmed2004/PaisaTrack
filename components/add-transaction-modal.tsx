@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useTransactions } from "@/hooks/use-transactions"
+import { formatPKR, parseDateInput, toDateInput } from "@/lib/money"
 import { toast } from "sonner"
 
 interface AddTransactionModalProps {
@@ -20,14 +21,14 @@ interface AddTransactionModalProps {
 }
 
 export function AddTransactionModal({ open, onOpenChange, type }: AddTransactionModalProps) {
-  const { accounts, updateAccount } = useAccounts()
+  const { accounts } = useAccounts()
   const { addTransaction } = useTransactions()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     accountId: "",
     amount: "",
     description: "",
-    date: new Date().toISOString().split("T")[0],
+    date: toDateInput(new Date()),
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,39 +37,32 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
     if (!formData.amount) return toast.error("Please enter an amount")
     if (!formData.description.trim()) return toast.error("Please enter a description")
 
+    const amount = Number.parseFloat(formData.amount)
+    if (!Number.isFinite(amount) || amount <= 0) return toast.error("Enter a valid amount greater than 0")
+
     setLoading(true)
     try {
-      const amount = Number.parseFloat(formData.amount)
-      const selectedAccount = accounts.find((acc) => acc.id === formData.accountId)
-
-      if (!selectedAccount) throw new Error("Account not found")
-
-      // Add transaction
+      // The balance moves inside the same atomic write as the entry itself.
       await addTransaction({
         accountId: formData.accountId,
         type,
         amount,
         description: formData.description,
-        date: new Date(formData.date),
+        date: parseDateInput(formData.date),
       })
-
-      // Update account balance
-      const newBalance = type === "income" ? selectedAccount.balance + amount : selectedAccount.balance - amount
-
-      await updateAccount(formData.accountId, { balance: newBalance })
 
       // Reset form and close modal
       setFormData({
         accountId: "",
         amount: "",
         description: "",
-        date: new Date().toISOString().split("T")[0],
+        date: toDateInput(new Date()),
       })
       onOpenChange(false)
       toast.success(`${type === "income" ? "Income" : "Expense"} added`)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding transaction:", error)
-      toast.error("Failed to add transaction")
+      toast.error(error?.message || "Failed to add transaction")
     } finally {
       setLoading(false)
     }
@@ -93,7 +87,7 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
               <SelectContent>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.name} (PKR {account.balance.toLocaleString()})
+                    {account.name} (PKR {formatPKR(account.balance)})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -105,7 +99,7 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
               id="amount"
               type="number"
               step="0.01"
-              min="0"
+              min="0.01"
               required
               value={formData.amount}
               onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
