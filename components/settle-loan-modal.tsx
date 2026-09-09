@@ -9,9 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAccounts } from "@/hooks/use-accounts"
 import { useAuth } from "@/hooks/use-auth"
 import { toast } from "sonner"
-import { db } from "@/lib/firebase"
-import { collection, doc, runTransaction, serverTimestamp } from "firebase/firestore"
-import { formatPKR, round2, toAmount } from "@/lib/money"
+import { useLoans } from "@/hooks/use-loans"
+import { formatPKR } from "@/lib/money"
 import type { Loan } from "@/lib/types"
 
 interface SettleLoanModalProps {
@@ -23,6 +22,7 @@ interface SettleLoanModalProps {
 export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalProps) {
   const { accounts } = useAccounts()
   const { user } = useAuth()
+  const { settleLoan } = useLoans()
   const [loading, setLoading] = useState(false)
   const [accountId, setAccountId] = useState("")
 
@@ -43,38 +43,7 @@ export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalPro
 
     setLoading(true)
     try {
-      await runTransaction(db, async (tx) => {
-        const accRef = doc(db, "users", user.uid, "accounts", selectedAccount.id)
-        const accSnap = await tx.get(accRef)
-        if (!accSnap.exists()) throw new Error("Account not found")
-        const currentBal = toAmount(accSnap.data().balance)
-
-        const amount = round2(toAmount(loan.amount))
-        const isGiven = loan.type === "given" // we lent; settlement adds money in
-        const newBal = round2(isGiven ? currentBal + amount : currentBal - amount)
-        if (!isGiven && newBal < 0) throw new Error("Insufficient balance to settle this loan")
-
-        tx.update(accRef, { balance: newBal, updatedAt: serverTimestamp() })
-
-        // Update loan status
-        const loanRef = doc(db, "users", user.uid, "loans", loan.id)
-        tx.update(loanRef, { status: "settled", settledAt: serverTimestamp() })
-
-        // Log a transaction for settlement
-        const txCol = collection(db, "users", user.uid, "transactions")
-        const tRef = doc(txCol)
-        tx.set(tRef, {
-          accountId: selectedAccount.id,
-          type: isGiven ? "income" : "spend",
-          amount,
-          description: `Loan settlement with ${loan.personName} - ${loan.description}`,
-          date: new Date(),
-          createdAt: serverTimestamp(),
-          // Tagged so the settlement can be reversed if the loan is reopened.
-          loanId: loan.id,
-          loanEntry: "settlement",
-        })
-      })
+      await settleLoan(loan, accountId)
 
       toast.success("Loan marked as settled")
       resetAndClose()

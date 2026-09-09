@@ -85,6 +85,123 @@ export function useLoans() {
   }
 
   /**
+   * Records a loan and, unless it is carried over from before, moves the money
+   * through the chosen account and writes the matching ledger entry.
+   */
+  const createLoan = async (params: {
+    type: "given" | "taken"
+    personName: string
+    amount: number
+    description: string
+    date: Date
+    accountId?: string
+    carriedOver?: boolean
+    accountName?: string
+  }) => {
+    const currentUser = requireUser()
+
+    const amount = round2(toAmount(params.amount))
+    if (amount <= 0) throw new Error("Enter a valid amount greater than 0")
+
+    if (params.carriedOver) {
+      // The cash changed hands before this app was tracking it: no balance
+      // moves and no ledger entry, just the outstanding obligation.
+      await addDoc(collection(db, "users", currentUser.uid, "loans"), {
+        type: params.type,
+        personName: params.personName,
+        amount,
+        description: params.description,
+        status: "pending",
+        date: params.date,
+        createdAt: serverTimestamp(),
+        carriedOver: true,
+      })
+      return
+    }
+
+    if (!params.accountId) throw new Error("Please select an account")
+
+    await runTransaction(db, async (tx) => {
+      const ref = accountRef(currentUser.uid, params.accountId!)
+      const snap = await tx.get(ref)
+      if (!snap.exists()) throw new Error("Account not found")
+
+      const currentBal = toAmount(snap.data().balance)
+      if (params.type === "given" && currentBal < amount) {
+        throw new Error("Insufficient balance for this loan")
+      }
+
+      const newBal = round2(params.type === "given" ? currentBal - amount : currentBal + amount)
+      tx.update(ref, { balance: newBal, updatedAt: serverTimestamp() })
+
+      const loanRef = doc(collection(db, "users", currentUser.uid, "loans"))
+      tx.set(loanRef, {
+        type: params.type,
+        personName: params.personName,
+        amount,
+        description: params.description,
+        status: "pending",
+        date: params.date,
+        createdAt: serverTimestamp(),
+        accountId: params.accountId,
+        carriedOver: false,
+      })
+
+      tx.set(doc(collection(db, "users", currentUser.uid, "transactions")), {
+        accountId: params.accountId,
+        type: params.type === "given" ? "loan-given" : "loan-taken",
+        amount,
+        description: `${params.type === "given" ? "Loan Given to" : "Loan Taken from"} ${params.personName} - ${params.description}`,
+        date: params.date,
+        createdAt: serverTimestamp(),
+        // Links the entry back to the loan so the two stay in sync.
+        loanId: loanRef.id,
+        loanEntry: "disbursement",
+      })
+    })
+  }
+
+  /**
+   * Settles a loan: money comes back in for one you gave, or goes out for one
+   * you took, and the entry is tagged so it can be reversed later.
+   */
+  const settleLoan = async (loan: Loan, accountId: string) => {
+    const currentUser = requireUser()
+    if (!accountId) throw new Error("Please select an account")
+    if (loan.status === "settled") throw new Error("This loan is already settled")
+
+    const amount = round2(toAmount(loan.amount))
+    const isGiven = loan.type === "given" // we lent; settlement brings money in
+
+    await runTransaction(db, async (tx) => {
+      const ref = accountRef(currentUser.uid, accountId)
+      const snap = await tx.get(ref)
+      if (!snap.exists()) throw new Error("Account not found")
+
+      const newBal = round2(toAmount(snap.data().balance) + (isGiven ? amount : -amount))
+      if (newBal < 0) throw new Error("Insufficient balance to settle this loan")
+
+      tx.update(ref, { balance: newBal, updatedAt: serverTimestamp() })
+      tx.update(doc(db, "users", currentUser.uid, "loans", loan.id), {
+        status: "settled",
+        settledAt: serverTimestamp(),
+      })
+
+      tx.set(doc(collection(db, "users", currentUser.uid, "transactions")), {
+        accountId,
+        type: isGiven ? "income" : "spend",
+        amount,
+        description: `Loan settlement with ${loan.personName} - ${loan.description}`,
+        date: new Date(),
+        createdAt: serverTimestamp(),
+        // Tagged so the settlement can be reversed if the loan is reopened.
+        loanId: loan.id,
+        loanEntry: "settlement",
+      })
+    })
+  }
+
+  /**
    * Edits the loan's details. Changing the amount of a pending loan moves the
    * difference on the account it was disbursed from, and keeps the linked
    * ledger entry in step.
@@ -226,6 +343,8 @@ export function useLoans() {
     netLoanAmount,
     loading,
     addLoan,
+    createLoan,
+    settleLoan,
     updateLoan,
     unsettleLoan,
     deleteLoan,

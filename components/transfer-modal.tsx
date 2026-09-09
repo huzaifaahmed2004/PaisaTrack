@@ -9,9 +9,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
-import { db } from "@/lib/firebase"
-import { collection, doc, runTransaction, serverTimestamp } from "firebase/firestore"
-import { formatPKR, parseDateInput, round2, toAmount, toDateInput } from "@/lib/money"
+import { useTransfers } from "@/hooks/use-transfers"
+import { formatPKR, parseDateInput, round2, toDateInput } from "@/lib/money"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
 
@@ -23,6 +22,7 @@ interface TransferModalProps {
 export function TransferModal({ open, onOpenChange }: TransferModalProps) {
   const { accounts } = useAccounts()
   const { user } = useAuth()
+  const { transfer } = useTransfers()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     fromAccountId: "",
@@ -52,54 +52,14 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
 
     setLoading(true)
     try {
-      await runTransaction(db, async (tx) => {
-        // Account refs
-        const fromRef = doc(db, "users", user.uid, "accounts", from.id)
-        const toRef = doc(db, "users", user.uid, "accounts", to.id)
-
-        // Read latest balances
-        const fromSnap = await tx.get(fromRef)
-        const toSnap = await tx.get(toRef)
-        if (!fromSnap.exists() || !toSnap.exists()) throw new Error("Account documents missing")
-
-        const fromBal = toAmount(fromSnap.data().balance)
-        const toBal = toAmount(toSnap.data().balance)
-        if (fromBal < amount) throw new Error("Insufficient balance in source account")
-
-        // Update balances
-        tx.update(fromRef, { balance: round2(fromBal - amount), updatedAt: serverTimestamp() })
-        tx.update(toRef, { balance: round2(toBal + amount), updatedAt: serverTimestamp() })
-
-        // Create mirrored transactions under each account's user path
-        const date = parseDateInput(formData.date)
-
-        const fromTxCol = collection(db, "users", user.uid, "transactions")
-        const toTxCol = collection(db, "users", user.uid, "transactions")
-
-        const outTxRef = doc(fromTxCol)
-        const inTxRef = doc(toTxCol)
-        // Shared id so the pair is always deleted and reversed together.
-        const transferId = outTxRef.id
-
-        tx.set(outTxRef, {
-          accountId: from.id,
-          type: "spend",
-          amount,
-          description: formData.description + ` → ${to.name}`,
-          date,
-          createdAt: serverTimestamp(),
-          transferId,
-        })
-
-        tx.set(inTxRef, {
-          accountId: to.id,
-          type: "income",
-          amount,
-          description: formData.description + ` ← ${from.name}`,
-          date,
-          createdAt: serverTimestamp(),
-          transferId,
-        })
+      await transfer({
+        fromAccountId: from.id,
+        fromAccountName: from.name,
+        toAccountId: to.id,
+        toAccountName: to.name,
+        amount,
+        description: formData.description,
+        date: parseDateInput(formData.date),
       })
 
       toast.success("Transfer completed")

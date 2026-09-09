@@ -1,0 +1,21 @@
+rules_version = '2';
+
+// Every document in this app lives under users/{uid}/..., and nothing is
+// shared between users. So the only rule needed is: you may touch your own
+// subtree, and nothing else. Paste this into the Firebase console under
+// Firestore Database -> Rules -> Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // accounts, transactions, loans, subscriptions, goals
+      match /{collection}/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Anything not matched above is denied by default.
+  }
+}

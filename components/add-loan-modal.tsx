@@ -12,10 +12,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useAuth } from "@/hooks/use-auth"
 import { toast } from "sonner"
-import { db } from "@/lib/firebase"
-import { addDoc, collection, doc, runTransaction, serverTimestamp } from "firebase/firestore"
+import { useLoans } from "@/hooks/use-loans"
 import { Checkbox } from "@/components/ui/checkbox"
-import { formatPKR, parseDateInput, round2, toAmount, toDateInput } from "@/lib/money"
+import { formatPKR, parseDateInput, round2, toDateInput } from "@/lib/money"
 
 interface AddLoanModalProps {
   open: boolean
@@ -25,6 +24,7 @@ interface AddLoanModalProps {
 export function AddLoanModal({ open, onOpenChange }: AddLoanModalProps) {
   const { accounts } = useAccounts()
   const { user } = useAuth()
+  const { createLoan } = useLoans()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     type: "" as "given" | "taken" | "",
@@ -60,66 +60,15 @@ export function AddLoanModal({ open, onOpenChange }: AddLoanModalProps) {
 
     setLoading(true)
     try {
-      if (formData.carriedOver) {
-        // The money changed hands before this app was tracking it, so no
-        // balance moves and no ledger entry is written. It is recorded purely
-        // as an outstanding obligation - settling it later moves the money.
-        await addDoc(collection(db, "users", user.uid, "loans"), {
-          type: formData.type,
-          personName: formData.personName,
-          amount,
-          description: formData.description,
-          status: "pending",
-          date: parseDateInput(formData.date),
-          createdAt: serverTimestamp(),
-          carriedOver: true,
-        })
-      } else {
-        const selectedAccount = accounts.find((a) => a.id === formData.accountId)
-        if (!selectedAccount) throw new Error("Account not found")
-
-        await runTransaction(db, async (tx) => {
-          const accountRef = doc(db, "users", user.uid, "accounts", selectedAccount.id)
-          const accountSnap = await tx.get(accountRef)
-          if (!accountSnap.exists()) throw new Error("Account not found")
-          const currentBal = toAmount(accountSnap.data().balance)
-
-          if (formData.type === "given" && currentBal < amount) {
-            throw new Error("Insufficient balance for this loan")
-          }
-
-          const newBal = round2(formData.type === "given" ? currentBal - amount : currentBal + amount)
-          tx.update(accountRef, { balance: newBal, updatedAt: serverTimestamp() })
-
-          const loansCol = collection(db, "users", user.uid, "loans")
-          const loanRef = doc(loansCol)
-          tx.set(loanRef, {
-            type: formData.type,
-            personName: formData.personName,
-            amount,
-            description: formData.description,
-            status: "pending",
-            date: parseDateInput(formData.date),
-            createdAt: serverTimestamp(),
-            accountId: selectedAccount.id,
-            carriedOver: false,
-          })
-
-          const txCol = collection(db, "users", user.uid, "transactions")
-          const txRef = doc(txCol)
-          tx.set(txRef, {
-            accountId: selectedAccount.id,
-            type: formData.type === "given" ? "loan-given" : "loan-taken",
-            amount,
-            description: `${formData.type === "given" ? "Loan Given to" : "Loan Taken from"} ${formData.personName} - ${formData.description}`,
-            date: parseDateInput(formData.date),
-            createdAt: serverTimestamp(),
-            // Links the entry back to the loan so the two stay in sync.
-            loanId: loanRef.id,
-            loanEntry: "disbursement",
-          })
-        })
-      }
+      await createLoan({
+        type: formData.type,
+        personName: formData.personName,
+        amount,
+        description: formData.description,
+        date: parseDateInput(formData.date),
+        accountId: formData.accountId,
+        carriedOver: formData.carriedOver,
+      })
 
       // Reset form and close modal
       resetForm()
