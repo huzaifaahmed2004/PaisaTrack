@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/use-auth"
 import { useAssistantActions } from "@/hooks/use-assistant-actions"
-import { Loader2, Mic, MicOff, Sparkles, Check, X } from "lucide-react"
+import { Loader2, Mic, Sparkles, Check, X } from "lucide-react"
 import { toast } from "sonner"
 import type { AssistantAction } from "@/lib/ai/actions"
 
@@ -174,7 +174,8 @@ export function AssistantBar() {
     <>
       <Button
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 h-14 w-14 rounded-full shadow-lg bg-accent hover:bg-accent/90 p-0"
+        className="fixed right-4 z-40 h-14 w-14 rounded-full shadow-lg bg-accent hover:bg-accent/90 p-0"
+        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
         title="Ask PaisaTrack"
       >
         <Sparkles className="h-6 w-6" />
@@ -192,7 +193,9 @@ export function AssistantBar() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent
+          className="top-4 max-h-[calc(100dvh-2rem)] translate-y-0 gap-3 overflow-y-auto p-4 sm:top-1/2 sm:max-w-lg sm:-translate-y-1/2 sm:gap-4 sm:p-6"
+        >
           <DialogHeader>
             <DialogTitle>Just say it</DialogTitle>
             <DialogDescription>
@@ -200,14 +203,15 @@ export function AssistantBar() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <form onSubmit={handleSubmit} className="space-y-2">
+            <Input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={listening ? "Listening..." : "spent 1200 on groceries from cash"}
+              className="h-11 text-base"
+              autoFocus
+            />
             <div className="flex gap-2">
-              <Input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={listening ? "Listening..." : "spent 1200 on groceries from cash"}
-                autoFocus
-              />
               {speechSupported && (
                 <Button
                   type="button"
@@ -215,15 +219,20 @@ export function AssistantBar() {
                   size="icon"
                   onClick={toggleListening}
                   title={listening ? "Stop listening" : "Speak"}
-                  className="shrink-0"
+                  className="h-11 w-11 shrink-0"
                 >
-                  {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {listening ? <Mic className="h-5 w-5 animate-pulse" /> : <Mic className="h-5 w-5" />}
                 </Button>
               )}
-              <Button type="submit" disabled={thinking || !text.trim()} className="bg-accent hover:bg-accent/90">
+              <Button
+                type="submit"
+                disabled={thinking || !text.trim()}
+                className="h-11 flex-1 bg-accent hover:bg-accent/90"
+              >
                 {thinking ? <Loader2 className="h-4 w-4 animate-spin" /> : "Go"}
               </Button>
             </div>
+            {listening && <p className="text-xs text-accent">Listening - tap the mic again to stop</p>}
           </form>
 
           {!reply && !actions.length && !done.length && !thinking && (
@@ -235,7 +244,7 @@ export function AssistantBar() {
                     key={example}
                     type="button"
                     onClick={() => setText(example)}
-                    className="text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/70 text-muted-foreground"
+                    className="text-xs px-3 py-2 rounded-md bg-muted active:bg-muted/60 hover:bg-muted/70 text-muted-foreground text-left"
                   >
                     {example}
                   </button>
@@ -255,12 +264,12 @@ export function AssistantBar() {
                   </div>
                 ))}
               </div>
-              <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={reset} disabled={running}>
+              <div className="flex gap-2">
+                <Button variant="outline" className="h-11 flex-1" onClick={reset} disabled={running}>
                   <X className="h-4 w-4 mr-2" />
                   Cancel
                 </Button>
-                <Button className="flex-1 bg-accent hover:bg-accent/90" onClick={confirm} disabled={running}>
+                <Button className="h-11 flex-1 bg-accent hover:bg-accent/90" onClick={confirm} disabled={running}>
                   {running ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
