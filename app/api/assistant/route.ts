@@ -34,6 +34,7 @@ Rules:
 - Money lent to or borrowed from a person is a loan, not a plain expense.
 - If the user says a loan or debt is from before they started tracking, or that they already spent the borrowed money, set carriedOver to true.
 - Setting money aside for a plan is a goal, and it moves no money. Only goal_spend moves money.
+- Budgets are spending limits and move no money. When an expense clearly belongs to one of the BUDGETS ("lunch" fits Food), set budgetId on add_transaction. Never set it for income.
 - The user may ask for several things at once. Emit one function call per action.
 - You cannot delete or clear data, and you cannot edit existing records. If asked, say that must be done in the app itself.
 - Today is ${"${TODAY}"}.
@@ -45,6 +46,7 @@ type ContextPayload = {
   loans?: { id: string; personName: string; amount: number; type: string; status: string }[]
   subscriptions?: { id: string; name: string; amount: number; dayOfMonth: number }[]
   goals?: { id: string; name: string; targetAmount: number; savedAmount: number }[]
+  budgets?: { id: string; name: string; limit: number; spent: number }[]
 }
 
 function buildContext(context: ContextPayload): string {
@@ -80,6 +82,15 @@ function buildContext(context: ContextPayload): string {
     lines.push(
       `SAVINGS PLANS:\n${goals
         .map((g) => `- id=${g.id} | ${g.name} | saved ${g.savedAmount} of ${g.targetAmount}`)
+        .join("\n")}`,
+    )
+  }
+
+  const budgets = context.budgets ?? []
+  if (budgets.length) {
+    lines.push(
+      `BUDGETS (this cycle):\n${budgets
+        .map((b) => `- id=${b.id} | ${b.name} | spent ${b.spent} of ${b.limit}`)
         .join("\n")}`,
     )
   }

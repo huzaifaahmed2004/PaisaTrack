@@ -6,7 +6,9 @@ import { useTransfers } from "@/hooks/use-transfers"
 import { useLoans } from "@/hooks/use-loans"
 import { useSubscriptions } from "@/hooks/use-subscriptions"
 import { useGoals } from "@/hooks/use-goals"
-import { formatPKR, parseDateInput, round2 } from "@/lib/money"
+import { useSpendable } from "@/hooks/use-spendable"
+import { useBudgets } from "@/hooks/use-budgets"
+import { formatPKR, parseDateInput } from "@/lib/money"
 import { ordinalDay } from "@/lib/recurrence"
 import type { AssistantAction } from "@/lib/ai/actions"
 
@@ -16,15 +18,20 @@ import type { AssistantAction } from "@/lib/ai/actions"
  * a person tapped a button or spoke a sentence.
  */
 export function useAssistantActions() {
-  const { accounts, totalBalance, addAccount } = useAccounts()
+  const { accounts, addAccount } = useAccounts()
   const { addTransaction } = useTransactions()
   const { transfer } = useTransfers()
   const { loans, createLoan, settleLoan } = useLoans()
   const { subscriptions, addSubscription, markPaid } = useSubscriptions()
-  const { goals, totalReserved, addGoal, addFunds, releaseFunds, spendFromGoal } = useGoals()
+  const { goals, addGoal, addFunds, releaseFunds, spendFromGoal } = useGoals()
+  const { freeToSpend } = useSpendable()
+  const { budgets, usage: budgetUsageList, addBudget } = useBudgets()
 
   const accountName = (id?: string) => accounts.find((account) => account.id === id)?.name ?? "the account"
   const parseDate = (value?: string) => (value ? parseDateInput(value) : new Date())
+  // Only a budget that still exists is honoured - a stale id is dropped.
+  const budgetFor = (type: string, budgetId?: string) =>
+    type === "spend" && budgetId ? budgets.find((budget) => budget.id === budgetId) : undefined
 
   /** A plain-language sentence the user confirms before anything is written. */
   const describe = (action: AssistantAction): string => {
@@ -34,7 +41,9 @@ export function useAssistantActions() {
       case "add_transaction":
         return `Record ${args.type === "income" ? "income" : "an expense"} of PKR ${formatPKR(args.amount)} ${
           args.type === "income" ? "into" : "from"
-        } ${accountName(args.accountId)} - "${args.description}"`
+        } ${accountName(args.accountId)} - "${args.description}"${
+          budgetFor(args.type, args.budgetId) ? ` (${budgetFor(args.type, args.budgetId)!.name} budget)` : ""
+        }`
       case "transfer":
         return `Transfer PKR ${formatPKR(args.amount)} from ${accountName(args.fromAccountId)} to ${accountName(
           args.toAccountId,
@@ -82,6 +91,8 @@ export function useAssistantActions() {
           args.accountId,
         )}`
       }
+      case "add_budget":
+        return `Create a "${args.name}" budget of PKR ${formatPKR(args.limit)} per cycle - no money moves`
       default:
         return "Unknown action"
     }
@@ -99,6 +110,7 @@ export function useAssistantActions() {
           amount: args.amount,
           description: args.description,
           date: parseDate(args.date),
+          ...(budgetFor(args.type, args.budgetId) ? { budgetId: args.budgetId } : {}),
         })
         return `${args.type === "income" ? "Income" : "Expense"} of PKR ${formatPKR(args.amount)} recorded`
       }
@@ -180,7 +192,7 @@ export function useAssistantActions() {
         const goal = goals.find((entry) => entry.id === args.goalId)
         if (!goal) throw new Error("Could not find that plan")
 
-        await addFunds(goal, args.amount, round2(totalBalance - totalReserved))
+        await addFunds(goal, args.amount, freeToSpend)
         return `PKR ${formatPKR(args.amount)} set aside for ${goal.name}`
       }
 
@@ -198,6 +210,11 @@ export function useAssistantActions() {
 
         await spendFromGoal(goal, args.accountId, args.amount, parseDate(args.date))
         return `Spent PKR ${formatPKR(args.amount)} on ${goal.name}`
+      }
+
+      case "add_budget": {
+        await addBudget({ name: args.name, limit: args.limit })
+        return `${args.name} budget created`
       }
 
       default:
@@ -231,6 +248,12 @@ export function useAssistantActions() {
       name: goal.name,
       targetAmount: goal.targetAmount,
       savedAmount: goal.savedAmount,
+    })),
+    budgets: budgetUsageList.map((entry) => ({
+      id: entry.budget.id,
+      name: entry.budget.name,
+      limit: entry.budget.limit,
+      spent: entry.spent,
     })),
   })
 

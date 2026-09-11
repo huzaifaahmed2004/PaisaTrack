@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
+import { useBudgets } from "@/hooks/use-budgets"
 import { useTransactions } from "@/hooks/use-transactions"
-import { formatPKR, parseDateInput, toDateInput } from "@/lib/money"
+import { formatPKR, parseDateInput, round2, toDateInput } from "@/lib/money"
 import { toast } from "sonner"
 
 interface AddTransactionModalProps {
@@ -20,8 +21,12 @@ interface AddTransactionModalProps {
   type: "income" | "spend"
 }
 
+// Radix Select cannot use an empty string as an item value.
+const NO_BUDGET = "none"
+
 export function AddTransactionModal({ open, onOpenChange, type }: AddTransactionModalProps) {
   const { accounts } = useAccounts()
+  const { usage } = useBudgets()
   const { addTransaction } = useTransactions()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -29,7 +34,15 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
     amount: "",
     description: "",
     date: toDateInput(new Date()),
+    budgetId: NO_BUDGET,
   })
+
+  const selectedBudget = usage.find((entry) => entry.budget.id === formData.budgetId)
+  const enteredAmount = Number.parseFloat(formData.amount)
+  const wouldOverspend =
+    selectedBudget && Number.isFinite(enteredAmount)
+      ? round2(selectedBudget.spent + enteredAmount - selectedBudget.budget.limit)
+      : 0
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,6 +62,8 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
         amount,
         description: formData.description,
         date: parseDateInput(formData.date),
+        // A budget tag is bookkeeping only - it never changes the money flow.
+        ...(type === "spend" && selectedBudget ? { budgetId: selectedBudget.budget.id } : {}),
       })
 
       // Reset form and close modal
@@ -57,6 +72,7 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
         amount: "",
         description: "",
         date: toDateInput(new Date()),
+        budgetId: NO_BUDGET,
       })
       onOpenChange(false)
       toast.success(`${type === "income" ? "Income" : "Expense"} added`)
@@ -106,6 +122,36 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
               placeholder="0.00"
             />
           </div>
+          {type === "spend" && usage.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="budget">Budget (optional)</Label>
+              <Select
+                value={formData.budgetId}
+                onValueChange={(value) => setFormData({ ...formData, budgetId: value })}
+              >
+                <SelectTrigger id="budget">
+                  <SelectValue placeholder="No budget" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_BUDGET}>No budget</SelectItem>
+                  {usage.map((entry) => (
+                    <SelectItem key={entry.budget.id} value={entry.budget.id}>
+                      {entry.budget.name} (
+                      {entry.overBy > 0
+                        ? `PKR ${formatPKR(entry.overBy)} over`
+                        : `PKR ${formatPKR(entry.remaining)} left`}
+                      )
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedBudget && wouldOverspend > 0 && (
+                <p className="text-xs text-orange-500">
+                  This takes {selectedBudget.budget.name} PKR {formatPKR(wouldOverspend)} over budget.
+                </p>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { DayStepper } from "@/components/ui/day-stepper"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useSubscriptions } from "@/hooks/use-subscriptions"
 import { formatPKR } from "@/lib/money"
@@ -122,18 +123,15 @@ export function SubscriptionModal({ open, onOpenChange, subscription, onClose }:
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                 placeholder="0.00"
+                className="h-11"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="dayOfMonth">Billing day</Label>
-              <Input
+              <DayStepper
                 id="dayOfMonth"
-                type="number"
-                min="1"
-                max="31"
-                required
                 value={formData.dayOfMonth}
-                onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
+                onChange={(value) => setFormData({ ...formData, dayOfMonth: value })}
               />
             </div>
           </div>

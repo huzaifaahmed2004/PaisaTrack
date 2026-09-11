@@ -19,7 +19,7 @@ import { balanceEffect, round2, toAmount } from "@/lib/money"
 import type { Transaction } from "@/lib/types"
 
 type NewTransaction = Omit<Transaction, "id" | "createdAt">
-type TransactionEdits = Partial<Pick<Transaction, "accountId" | "type" | "amount" | "description" | "date">>
+type TransactionEdits = Partial<Pick<Transaction, "accountId" | "type" | "amount" | "description" | "date" | "budgetId">>
 
 export function useTransactions() {
   const { user } = useAuth()

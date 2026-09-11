@@ -19,6 +19,7 @@ export type AssistantAction =
   | { name: "goal_set_aside"; args: GoalFundsArgs }
   | { name: "goal_release"; args: GoalFundsArgs }
   | { name: "goal_spend"; args: GoalSpendArgs }
+  | { name: "add_budget"; args: AddBudgetArgs }
 
 export type AddTransactionArgs = {
   type: "income" | "spend"
@@ -26,6 +27,7 @@ export type AddTransactionArgs = {
   accountId: string
   description: string
   date?: string
+  budgetId?: string
 }
 
 export type TransferArgs = {
@@ -74,6 +76,7 @@ export type AddGoalArgs = {
 
 export type GoalFundsArgs = { goalId: string; amount: number }
 export type GoalSpendArgs = { goalId: string; accountId: string; amount: number; date?: string }
+export type AddBudgetArgs = { name: string; limit: number }
 
 /** What the API route hands back to the client. */
 export type AssistantReply = {
@@ -101,6 +104,10 @@ export const FUNCTION_DECLARATIONS = [
         amount: { type: "NUMBER", description: "Amount in PKR, always positive" },
         accountId: { type: "STRING", description: "id of the account from the context list" },
         description: { type: "STRING", description: "Short description of what it was for" },
+        budgetId: {
+          type: "STRING",
+          description: "id of the budget this expense counts against, from the context list. Only for spend. Omit when no budget fits.",
+        },
         date: { type: "STRING", description: DATE_HINT },
       },
       required: ["type", "amount", "accountId", "description"],
@@ -243,6 +250,19 @@ export const FUNCTION_DECLARATIONS = [
         date: { type: "STRING", description: DATE_HINT },
       },
       required: ["goalId", "accountId", "amount"],
+    },
+  },
+  {
+    name: "add_budget",
+    description:
+      "Create a spending budget: a limit on how much the user means to spend on one kind of expense each cycle. It moves no money.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        name: { type: "STRING", description: "What the budget is for, e.g. Food, Fuel, Shopping" },
+        limit: { type: "NUMBER", description: "Amount in PKR allowed per cycle" },
+      },
+      required: ["name", "limit"],
     },
   },
 ] as const

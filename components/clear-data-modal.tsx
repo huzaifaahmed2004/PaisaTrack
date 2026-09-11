@@ -19,6 +19,7 @@ interface ClearDataModalProps {
   loanCount: number
   subscriptionCount: number
   goalCount: number
+  budgetCount: number
 }
 
 const CONFIRM_PHRASE = "RESET"
@@ -31,6 +32,7 @@ export function ClearDataModal({
   loanCount,
   subscriptionCount,
   goalCount,
+  budgetCount,
 }: ClearDataModalProps) {
   const { clearAllData, clearing } = useProfileData()
   const [confirmation, setConfirmation] = useState("")
@@ -39,7 +41,7 @@ export function ClearDataModal({
     if (!open) setConfirmation("")
   }, [open])
 
-  const nothingToClear = accountCount + transactionCount + loanCount + subscriptionCount + goalCount === 0
+  const nothingToClear = accountCount + transactionCount + loanCount + subscriptionCount + goalCount + budgetCount === 0
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -89,6 +91,9 @@ export function ClearDataModal({
               </li>
               <li>
                 {goalCount} savings plan{goalCount !== 1 ? "s" : ""}
+              </li>
+              <li>
+                {budgetCount} budget{budgetCount !== 1 ? "s" : ""}
               </li>
             </ul>
           </div>

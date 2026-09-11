@@ -228,6 +228,7 @@ export function useSubscriptions() {
   )
   const dueTotal = round2(dueSubscriptions.reduce((sum, subscription) => sum + toAmount(subscription.amount), 0))
 
+
   return {
     subscriptions,
     activeSubscriptions,

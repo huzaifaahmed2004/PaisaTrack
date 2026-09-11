@@ -29,6 +29,8 @@ export interface Transaction {
   subscriptionPeriod?: string
   /** Set on entries that spent money saved up for a goal. */
   goalId?: string
+  /** The budget an ordinary expense counts against, if any. Moves no money. */
+  budgetId?: string
 }
 
 export interface Loan {
@@ -90,6 +92,19 @@ export interface Goal {
   targetDate?: Date
   status: "active" | "completed"
   completedAt?: Date
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * A spending limit for one kind of expense, per budget cycle. It never moves
+ * money - it only compares tagged expenses against the limit.
+ */
+export interface Budget {
+  id: string
+  name: string
+  /** How much the user means to spend on this each cycle. */
+  limit: number
   createdAt: Date
   updatedAt: Date
 }

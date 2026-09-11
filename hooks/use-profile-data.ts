@@ -8,16 +8,16 @@ import { useAuth } from "@/hooks/use-auth"
 /** Firestore caps a batch at 500 writes. */
 const BATCH_LIMIT = 400
 
-const COLLECTIONS = ["transactions", "loans", "subscriptions", "goals", "accounts"] as const
+const COLLECTIONS = ["transactions", "loans", "subscriptions", "goals", "budgets", "accounts"] as const
 
 export function useProfileData() {
   const { user } = useAuth()
   const [clearing, setClearing] = useState(false)
 
   /**
-   * Wipes every account, transaction, loan, subscription and savings plan for
-   * the signed-in user, leaving the profile itself intact so they can start
-   * over from an empty ledger.
+   * Wipes every account, transaction, loan, subscription, savings plan and
+   * budget for the signed-in user, leaving the profile itself intact so they
+   * can start over from an empty ledger.
    */
   const clearAllData = async () => {
     if (!user) throw new Error("User not authenticated")

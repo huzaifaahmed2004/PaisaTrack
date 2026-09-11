@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useGoals } from "@/hooks/use-goals"
+import { useSpendable } from "@/hooks/use-spendable"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -18,8 +19,9 @@ import type { Goal } from "@/lib/types"
 
 export default function GoalsPage() {
   const { user, loading } = useAuth()
-  const { accounts, totalBalance } = useAccounts()
+  const { accounts } = useAccounts()
   const { goals, activeGoals, completedGoals, totalReserved, totalTargets, deleteGoal } = useGoals()
+  const { reservedForBills, freeToSpend, holdLabel } = useSpendable()
   const router = useRouter()
 
   const [formOpen, setFormOpen] = useState(false)
@@ -34,8 +36,8 @@ export default function GoalsPage() {
     }
   }, [user, loading, router])
 
-  // Balance that no plan has claimed yet.
-  const availableToReserve = round2(totalBalance - totalReserved)
+  // Balance that neither a plan nor an upcoming bill has claimed.
+  const availableToReserve = freeToSpend
 
   const openFunds = (goal: Goal, mode: FundsMode) => {
     setFundsGoal(goal)
@@ -189,7 +191,11 @@ export default function GoalsPage() {
               <div className={`text-2xl font-bold ${availableToReserve < 0 ? "text-red-500" : ""}`}>
                 PKR {formatPKR(availableToReserve)}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Balance no plan has claimed</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {reservedForBills > 0
+                  ? `After plans, and PKR ${formatPKR(reservedForBills)} ${holdLabel}`
+                  : "Balance no plan has claimed"}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -217,9 +223,9 @@ export default function GoalsPage() {
           <Card className="border-destructive/40">
             <CardContent className="pt-6">
               <p className="text-sm">
-                Your plans are holding more than your accounts contain. That usually means money was spent without
-                releasing it from a plan first - release PKR {formatPKR(Math.abs(availableToReserve))} from a plan to
-                line things up again.
+                Your plans and upcoming bills need PKR {formatPKR(Math.abs(availableToReserve))} more than your
+                accounts hold. Release that much from a plan, or record income that has not been added yet, to line
+                things up again.
               </p>
             </CardContent>
           </Card>

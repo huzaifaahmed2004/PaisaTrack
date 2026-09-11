@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useAccounts } from "@/hooks/use-accounts"
+import { useBudgets } from "@/hooks/use-budgets"
 import { useTransactions } from "@/hooks/use-transactions"
 import { formatPKR, parseDateInput, toDateInput } from "@/lib/money"
 import { toast } from "sonner"
@@ -22,8 +23,12 @@ interface EditTransactionModalProps {
   onClose: () => void
 }
 
+// Radix Select cannot use an empty string as an item value.
+const NO_BUDGET = "none"
+
 export function EditTransactionModal({ open, onOpenChange, transaction, onClose }: EditTransactionModalProps) {
   const { accounts } = useAccounts()
+  const { budgets } = useBudgets()
   const { updateTransaction } = useTransactions()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -32,6 +37,7 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onClose 
     amount: "",
     description: "",
     date: "",
+    budgetId: NO_BUDGET,
   })
 
   useEffect(() => {
@@ -42,9 +48,17 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onClose 
         amount: transaction.amount.toString(),
         description: transaction.description,
         date: toDateInput(transaction.date),
+        budgetId:
+          transaction.budgetId && budgets.some((budget) => budget.id === transaction.budgetId)
+            ? transaction.budgetId
+            : NO_BUDGET,
       })
     }
-  }, [transaction])
+    // Budgets load separately; re-sync once they arrive so the tag shows.
+  }, [transaction, budgets])
+
+  // Spending saved up for a plan is already counted there, so it takes no budget.
+  const canBudget = formData.type === "spend" && budgets.length > 0 && !transaction?.goalId
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -66,6 +80,8 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onClose 
         amount,
         description: formData.description,
         date: parseDateInput(formData.date),
+        // Changing the type away from an expense drops the budget tag.
+        budgetId: canBudget && formData.budgetId !== NO_BUDGET ? formData.budgetId : "",
       })
 
       toast.success("Transaction updated")
@@ -136,6 +152,27 @@ export function EditTransactionModal({ open, onOpenChange, transaction, onClose 
               placeholder="0.00"
             />
           </div>
+          {canBudget && (
+            <div className="space-y-2">
+              <Label htmlFor="budget">Budget (optional)</Label>
+              <Select
+                value={formData.budgetId}
+                onValueChange={(value) => setFormData({ ...formData, budgetId: value })}
+              >
+                <SelectTrigger id="budget">
+                  <SelectValue placeholder="No budget" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_BUDGET}>No budget</SelectItem>
+                  {budgets.map((budget) => (
+                    <SelectItem key={budget.id} value={budget.id}>
+                      {budget.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea

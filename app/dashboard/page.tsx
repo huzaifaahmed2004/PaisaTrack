@@ -10,16 +10,18 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddTransactionModal } from "@/components/add-transaction-modal"
 import { AddLoanModal } from "@/components/add-loan-modal"
-import { Loader2, LogOut, Plus, Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2, RefreshCw, PiggyBank } from "lucide-react"
+import { Loader2, LogOut, Plus, Wallet, TrendingUp, Users, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2, RefreshCw, PiggyBank, PieChart } from "lucide-react"
 import { TransferModal } from "@/components/transfer-modal"
 import { ClearDataModal } from "@/components/clear-data-modal"
 import { PaySubscriptionModal } from "@/components/pay-subscription-modal"
 import { useGoals } from "@/hooks/use-goals"
+import { useSpendable } from "@/hooks/use-spendable"
+import { useBudgets } from "@/hooks/use-budgets"
 import { Progress } from "@/components/ui/progress"
 import { useSubscriptions } from "@/hooks/use-subscriptions"
 import { dueStatusLabel } from "@/lib/recurrence"
 import { Badge } from "@/components/ui/badge"
-import { formatPKR, round2, transactionSign } from "@/lib/money"
+import { formatPKR, transactionSign } from "@/lib/money"
 import type { Subscription } from "@/lib/types"
 import { accountTypeLabel } from "@/lib/account-types"
 
@@ -30,6 +32,8 @@ export default function DashboardPage() {
   const { loans, netLoanAmount, totalGivenPending, totalTakenPending } = useLoans()
   const { subscriptions, dueSubscriptions, dueTotal, monthlyTotal, activeSubscriptions } = useSubscriptions()
   const { goals, activeGoals, totalReserved } = useGoals()
+  const { reservedForBills, totalHeld, freeToSpend, holdLabel } = useSpendable()
+  const { budgets, usage: budgetUsageList, totalSpent: budgetSpent, totalLimit: budgetLimit } = useBudgets()
   const router = useRouter()
 
   const [incomeModalOpen, setIncomeModalOpen] = useState(false)
@@ -77,8 +81,6 @@ export default function DashboardPage() {
   const loansGivenPending = loans.filter((loan) => loan.type === "given" && loan.status === "pending").length
   const loansTakenPending = loans.filter((loan) => loan.type === "taken" && loan.status === "pending").length
   const pausedCount = subscriptions.length - activeSubscriptions.length
-  // What is genuinely free: the balance no savings plan has claimed.
-  const freeToSpend = round2(totalBalance - totalReserved)
 
   return (
     <div className="min-h-screen bg-background">
@@ -118,8 +120,8 @@ export default function DashboardPage() {
             <CardContent>
               <div className="text-2xl font-bold">PKR {formatPKR(totalBalance)}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                {totalReserved > 0
-                  ? `PKR ${formatPKR(freeToSpend)} free - PKR ${formatPKR(totalReserved)} set aside`
+                {totalHeld > 0
+                  ? `PKR ${formatPKR(freeToSpend)} free - PKR ${formatPKR(totalHeld)} held for plans and bills`
                   : "All accounts combined"}
               </p>
             </CardContent>
@@ -142,6 +144,8 @@ export default function DashboardPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 {dueSubscriptions.length > 0 ? (
                   <span className="text-orange-500 font-medium">PKR {formatPKR(dueTotal)} due now</span>
+                ) : reservedForBills > 0 ? (
+                  `PKR ${formatPKR(reservedForBills)} ${holdLabel}`
                 ) : (
                   `Every month across ${activeSubscriptions.length} bill${activeSubscriptions.length !== 1 ? "s" : ""}`
                 )}
@@ -275,6 +279,59 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">Budgets</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => router.push("/budgets")}>
+              <PieChart className="h-4 w-4 mr-2" />
+              Manage
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {budgetUsageList.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  <span className="text-lg font-bold text-foreground">PKR {formatPKR(budgetSpent)}</span> spent of PKR{" "}
+                  {formatPKR(budgetLimit)} budgeted this cycle
+                </p>
+                {budgetUsageList.slice(0, 3).map((entry) => {
+                  const over = entry.overBy > 0
+                  const near = !over && entry.progress >= 80
+
+                  return (
+                    <div key={entry.budget.id} className="p-3 bg-muted rounded-lg space-y-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className="font-medium truncate">{entry.budget.name}</h3>
+                        <p className={`text-sm whitespace-nowrap ${over ? "text-red-500" : ""}`}>
+                          <span className="font-semibold">PKR {formatPKR(entry.spent)}</span>
+                          <span className="text-muted-foreground"> of {formatPKR(entry.budget.limit)}</span>
+                        </p>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-background">
+                        <div
+                          className={`h-full rounded-full ${over ? "bg-red-500" : near ? "bg-orange-500" : "bg-green-500"}`}
+                          style={{ width: `${over ? 100 : entry.progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+                {budgetUsageList.length > 3 && (
+                  <p className="text-xs text-muted-foreground">
+                    +{budgetUsageList.length - 3} more budget{budgetUsageList.length - 3 !== 1 ? "s" : ""}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                <PieChart className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p>No budgets yet</p>
+                <p className="text-sm">Plan how much of your free money goes where</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Savings Plans</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => router.push("/goals")}>
               <PiggyBank className="h-4 w-4 mr-2" />
@@ -285,8 +342,9 @@ export default function DashboardPage() {
             {activeGoals.length > 0 ? (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  <span className="text-lg font-bold text-foreground">PKR {formatPKR(totalReserved)}</span> set aside,
-                  leaving PKR {formatPKR(freeToSpend)} free to spend
+                  <span className="text-lg font-bold text-foreground">PKR {formatPKR(totalReserved)}</span> set aside
+                  {reservedForBills > 0 && `, PKR ${formatPKR(reservedForBills)} ${holdLabel}`}, leaving PKR{" "}
+                  {formatPKR(freeToSpend)} free to spend
                 </p>
                 {activeGoals.slice(0, 3).map((goal) => {
                   const progress =
@@ -474,6 +532,7 @@ export default function DashboardPage() {
         loanCount={loans.length}
         subscriptionCount={subscriptions.length}
         goalCount={goals.length}
+        budgetCount={budgets.length}
       />
     </div>
   )

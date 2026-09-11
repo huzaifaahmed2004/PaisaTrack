@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useSubscriptions } from "@/hooks/use-subscriptions"
+import { useSpendable } from "@/hooks/use-spendable"
+import { PayWindowCard } from "@/components/pay-window-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +31,7 @@ export default function SubscriptionsPage() {
     deleteSubscription,
     undoLastPayment,
   } = useSubscriptions()
+  const { reservedForBills, heldBills, holdUntil } = useSpendable()
   const router = useRouter()
 
   const [formOpen, setFormOpen] = useState(false)
@@ -251,7 +254,7 @@ export default function SubscriptionsPage() {
       </header>
 
       <main className="max-w-4xl mx-auto p-4 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Every Month</CardTitle>
@@ -276,7 +279,21 @@ export default function SubscriptionsPage() {
               </p>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Held for Bills</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-accent">PKR {formatPKR(reservedForBills)}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {heldBills.length} bill{heldBills.length !== 1 ? "s" : ""} due by {holdUntil.toLocaleDateString()} - not
+                free to spend
+              </p>
+            </CardContent>
+          </Card>
         </div>
+
+        <PayWindowCard reservedForBills={reservedForBills} holdUntil={holdUntil} />
 
         {dueSubscriptions.length > 0 && (
           <Card className="border-orange-500/40">
