@@ -1,25 +1,38 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/hooks/use-auth"
+import { useState } from "react"
+import { ArrowDownLeft, ArrowUpRight, HandCoins, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
 import { useLoans } from "@/hooks/use-loans"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { AddLoanModal } from "@/components/add-loan-modal"
 import { EditLoanModal } from "@/components/edit-loan-modal"
 import { SettleLoanModal } from "@/components/settle-loan-modal"
-import { Loader2, ArrowLeft, Plus, Edit, Trash2, Users, CheckCircle, Clock } from "lucide-react"
-import { formatPKR } from "@/lib/money"
+import { useConfirm } from "@/components/confirm-dialog"
+import { Amount, EmptyState, PageHeader, StatCard } from "@/components/app-ui"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import type { Loan } from "@/lib/types"
 
+const initials = (name: string) =>
+  name
+    .split(" ")
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase()
+
 export default function LoansPage() {
-  const { user, loading } = useAuth()
   const { loansGiven, loansTaken, deleteLoan, unsettleLoan, totalGivenPending, totalTakenPending } = useLoans()
-  const router = useRouter()
+  const confirm = useConfirm()
 
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -27,31 +40,29 @@ export default function LoansPage() {
   const [settleModalOpen, setSettleModalOpen] = useState(false)
   const [loanToSettle, setLoanToSettle] = useState<Loan | null>(null)
 
-  useEffect(() => {
-    if (!user && !loading) {
-      router.push("/")
-    }
-  }, [user, loading, router])
-
   const handleEditLoan = (loan: Loan) => {
     setSelectedLoan(loan)
     setEditModalOpen(true)
   }
 
   const handleDeleteLoan = async (loan: Loan) => {
-    const warning =
-      loan.carriedOver && loan.status === "pending"
-        ? "Delete this loan? It never moved money through an account, so no balance changes. This cannot be undone."
-        : "Delete this loan? Its entries will be removed and any money it moved will be put back on the account. This cannot be undone."
+    const ok = await confirm({
+      title: "Delete this loan?",
+      description:
+        loan.carriedOver && loan.status === "pending"
+          ? "It never moved money through an account, so no balance changes. This cannot be undone."
+          : "Its entries will be removed and any money it moved will be put back on the account. This cannot be undone.",
+      confirmLabel: "Delete loan",
+      destructive: true,
+    })
+    if (!ok) return
 
-    if (confirm(warning)) {
-      try {
-        await deleteLoan(loan)
-        toast.success("Loan deleted")
-      } catch (error: any) {
-        console.error("Error deleting loan:", error)
-        toast.error(error?.message || "Failed to delete loan")
-      }
+    try {
+      await deleteLoan(loan)
+      toast.success("Loan deleted")
+    } catch (error: any) {
+      console.error("Error deleting loan:", error)
+      toast.error(error?.message || "Failed to delete loan")
     }
   }
 
@@ -61,7 +72,12 @@ export default function LoansPage() {
   }
 
   const handleMarkPending = async (loan: Loan) => {
-    if (!confirm("Reopen this loan? The settlement will be reversed on the account it was settled into.")) return
+    const ok = await confirm({
+      title: "Reopen this loan?",
+      description: "The settlement will be reversed on the account it was settled into.",
+      confirmLabel: "Reopen",
+    })
+    if (!ok) return
 
     try {
       // Reopening has to undo the settlement, or the money would be counted twice.
@@ -82,221 +98,160 @@ export default function LoansPage() {
   const pendingTaken = loansTaken.filter((loan) => loan.status === "pending")
   const settledTaken = loansTaken.filter((loan) => loan.status === "settled")
 
-  if (loading) {
+  const renderLoan = (loan: Loan) => {
+    const pending = loan.status === "pending"
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
-
-  const renderLoanCard = (loan: Loan) => (
-    <div
-      key={loan.id}
-      className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
-    >
-      <div className="flex items-start md:items-center gap-4">
-        <div className={`p-2 rounded-full ${loan.status === "pending" ? "bg-orange-500/20" : "bg-green-500/20"}`}>
-          {loan.status === "pending" ? (
-            <Clock className="h-4 w-4 text-orange-500" />
-          ) : (
-            <CheckCircle className="h-4 w-4 text-green-500" />
+      <div
+        key={loan.id}
+        className={cn("flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-accent/60", !pending && "opacity-70")}
+      >
+        <span
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+            loan.type === "given" ? "bg-positive/12 text-positive" : "bg-negative/12 text-negative",
           )}
-        </div>
-        <div className="min-w-0">
-          <h3 className="font-medium truncate">{loan.personName}</h3>
-          <p className="text-sm text-muted-foreground break-words">{loan.description}</p>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <span className="text-xs text-muted-foreground">{loan.date.toLocaleDateString()}</span>
-            <Badge variant={loan.status === "pending" ? "destructive" : "secondary"} className="text-xs">
-              {loan.status}
-            </Badge>
+        >
+          {initials(loan.personName) || "?"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="truncate text-sm font-medium">{loan.personName}</p>
+            {!pending && <Badge variant="muted">settled</Badge>}
             {loan.carriedOver && (
-              <Badge variant="outline" className="text-xs" title="Recorded as an existing loan - no account balance was changed">
+              <Badge variant="outline" title="Recorded as an existing loan - no account balance was changed">
                 existing
               </Badge>
             )}
           </div>
-        </div>
-      </div>
-      <div className="flex items-center justify-between md:justify-end gap-4">
-        <div className="text-right">
-          <p className={`text-base sm:text-lg font-semibold ${loan.type === "given" ? "text-blue-500" : "text-orange-500"}`}>
-            PKR {formatPKR(loan.amount)}
+          <p className="truncate text-xs text-muted-foreground">
+            {[loan.description, loan.date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })]
+              .filter(Boolean)
+              .join(" · ")}
+            {loan.settledAt && ` · settled ${loan.settledAt.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`}
           </p>
-          {loan.settledAt && (
-            <p className="text-xs text-muted-foreground">Settled {loan.settledAt.toLocaleDateString()}</p>
-          )}
         </div>
-        <div className="flex gap-1 sm:gap-2">
-          {loan.status === "pending" ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleOpenSettle(loan)}
-              className="text-xs text-green-600 hover:text-green-700"
-            >
-              Mark Settled
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleMarkPending(loan)}
-              className="text-xs text-orange-600 hover:text-orange-700"
-            >
-              Mark Pending
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleEditLoan(loan)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <Edit className="h-4 w-4" />
+        <Amount value={loan.amount} className="text-sm font-semibold" />
+        {pending && (
+          <Button size="sm" variant="outline" onClick={() => handleOpenSettle(loan)} className="hidden sm:inline-flex">
+            Settle
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleDeleteLoan(loan)}
-            className="text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground">
+              <MoreHorizontal />
+              <span className="sr-only">Actions</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {pending ? (
+              <DropdownMenuItem onSelect={() => handleOpenSettle(loan)}>
+                <HandCoins />
+                Mark settled
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onSelect={() => handleMarkPending(loan)}>
+                <RotateCcw />
+                Reopen as pending
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={() => handleEditLoan(loan)}>
+              <Pencil />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onSelect={() => handleDeleteLoan(loan)}>
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-    </div>
-  )
+    )
+  }
+
+  const renderList = (pending: Loan[], settled: Loan[], emptyTitle: string, emptyDescription: string) =>
+    pending.length + settled.length > 0 ? (
+      <div className="space-y-4">
+        {pending.length > 0 && (
+          <div>
+            <h3 className="px-2 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pending</h3>
+            <div className="space-y-0.5">{pending.map(renderLoan)}</div>
+          </div>
+        )}
+        {settled.length > 0 && (
+          <div>
+            <h3 className="px-2 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Settled</h3>
+            <div className="space-y-0.5">{settled.map(renderLoan)}</div>
+          </div>
+        )}
+      </div>
+    ) : (
+      <EmptyState
+        icon={HandCoins}
+        title={emptyTitle}
+        description={emptyDescription}
+        action={
+          <Button onClick={() => setAddModalOpen(true)}>
+            <Plus />
+            Add loan
+          </Button>
+        }
+      />
+    )
+
+  const net = totalGivenPending - totalTakenPending
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border p-4 md:p-6 lg:p-8">
-        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap md:flex-nowrap">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold md:text-2xl lg:text-3xl">Loan Tracking</h1>
-          </div>
-          <Button onClick={() => setAddModalOpen(true)} className="bg-accent hover:bg-accent/90">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Loan
+    <div className="space-y-5">
+      <PageHeader
+        title="Loans"
+        description="Money you have lent out and borrowed"
+        actions={
+          <Button onClick={() => setAddModalOpen(true)}>
+            <Plus />
+            Add loan
           </Button>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Money Lent Out</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-500">PKR {formatPKR(totalGivenPending)}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {pendingGiven.length} pending loan{pendingGiven.length !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Money Borrowed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-500">PKR {formatPKR(totalTakenPending)}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {pendingTaken.length} pending loan{pendingTaken.length !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+        <StatCard
+          label="Owed to you"
+          value={<Amount value={totalGivenPending} />}
+          hint={`${pendingGiven.length} pending`}
+          tone="positive"
+          icon={ArrowDownLeft}
+        />
+        <StatCard
+          label="You owe"
+          value={<Amount value={totalTakenPending} />}
+          hint={`${pendingTaken.length} pending`}
+          tone="negative"
+          icon={ArrowUpRight}
+        />
+        <StatCard
+          label="Net position"
+          value={<Amount value={Math.abs(net)} sign={net < 0 ? "-" : net > 0 ? "+" : ""} />}
+          hint={net >= 0 ? "In your favour" : "You owe more than you are owed"}
+          className="col-span-2 md:col-span-1"
+        />
+      </div>
 
-        {/* Loans Tabs */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Loan Records</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="given" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="given">Loans Given ({loansGiven.length})</TabsTrigger>
-                <TabsTrigger value="taken">Loans Taken ({loansTaken.length})</TabsTrigger>
-              </TabsList>
+      <section className="rounded-2xl border bg-card p-3 shadow-xs md:p-4">
+        <Tabs defaultValue="given" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="given">Lent ({loansGiven.length})</TabsTrigger>
+            <TabsTrigger value="taken">Borrowed ({loansTaken.length})</TabsTrigger>
+          </TabsList>
+          <TabsContent value="given" className="mt-3">
+            {renderList(pendingGiven, settledGiven, "No loans given yet", "Track money you have lent to others.")}
+          </TabsContent>
+          <TabsContent value="taken" className="mt-3">
+            {renderList(pendingTaken, settledTaken, "No loans taken yet", "Track money you have borrowed from others.")}
+          </TabsContent>
+        </Tabs>
+      </section>
 
-              <TabsContent value="given" className="space-y-4 mt-6">
-                {loansGiven.length > 0 ? (
-                  <div className="space-y-4">
-                    {pendingGiven.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-muted-foreground mb-3">Pending</h3>
-                        <div className="space-y-3">{pendingGiven.map(renderLoanCard)}</div>
-                      </div>
-                    )}
-                    {settledGiven.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-muted-foreground mb-3">Settled</h3>
-                        <div className="space-y-3">{settledGiven.map(renderLoanCard)}</div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Users className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                    <h3 className="text-lg font-medium mb-2">No loans given yet</h3>
-                    <p className="text-sm mb-4">Track money you've lent to others</p>
-                    <Button onClick={() => setAddModalOpen(true)} className="bg-accent hover:bg-accent/90">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Loan Given
-                    </Button>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="taken" className="space-y-4 mt-6">
-                {loansTaken.length > 0 ? (
-                  <div className="space-y-4">
-                    {pendingTaken.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-muted-foreground mb-3">Pending</h3>
-                        <div className="space-y-3">{pendingTaken.map(renderLoanCard)}</div>
-                      </div>
-                    )}
-                    {settledTaken.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-muted-foreground mb-3">Settled</h3>
-                        <div className="space-y-3">{settledTaken.map(renderLoanCard)}</div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Users className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                    <h3 className="text-lg font-medium mb-2">No loans taken yet</h3>
-                    <p className="text-sm mb-4">Track money you've borrowed from others</p>
-                    <Button onClick={() => setAddModalOpen(true)} className="bg-accent hover:bg-accent/90">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Loan Taken
-                    </Button>
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-      </main>
-
-      {/* Modals */}
       <AddLoanModal open={addModalOpen} onOpenChange={setAddModalOpen} />
       <EditLoanModal
         open={editModalOpen}

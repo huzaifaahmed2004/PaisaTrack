@@ -138,7 +138,7 @@ export function BudgetModal({ open, onOpenChange, budget, onClose }: BudgetModal
             <Button type="button" variant="outline" className="h-11 flex-1" onClick={close}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="h-11 flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading} className="h-11 flex-1">
               {loading ? "Saving..." : isEditing ? "Update Budget" : "Create Budget"}
             </Button>
           </div>

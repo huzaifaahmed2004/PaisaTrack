@@ -190,7 +190,7 @@ export function SubscriptionModal({ open, onOpenChange, subscription, onClose }:
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading} className="flex-1">
               {loading ? "Saving..." : isEditing ? "Update" : "Add Subscription"}
             </Button>
           </div>

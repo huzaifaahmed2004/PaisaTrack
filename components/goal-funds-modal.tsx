@@ -180,7 +180,7 @@ export function GoalFundsModal({
             <Button
               type="submit"
               disabled={loading || !goal || (mode === "spend" && accounts.length === 0)}
-              className="flex-1 bg-accent hover:bg-accent/90"
+              className="flex-1"
             >
               {loading ? "Working..." : COPY[mode].action}
             </Button>

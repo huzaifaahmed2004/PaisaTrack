@@ -29,7 +29,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
@@ -37,7 +37,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   if (requireAuth && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
@@ -45,7 +45,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   if (!requireAuth && user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }

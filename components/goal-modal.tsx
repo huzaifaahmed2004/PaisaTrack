@@ -178,7 +178,7 @@ export function GoalModal({ open, onOpenChange, goal, onClose }: GoalModalProps)
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading} className="flex-1">
               {loading ? "Saving..." : isEditing ? "Update Plan" : "Create Plan"}
             </Button>
           </div>

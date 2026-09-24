@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useAuth } from "@/hooks/use-auth"
 import { useAssistantActions } from "@/hooks/use-assistant-actions"
 import { Loader2, Mic, Sparkles, Check, X } from "lucide-react"
 import { toast } from "sonner"
@@ -26,11 +25,15 @@ const EXAMPLES = [
   "set aside 10000 for the laptop",
 ]
 
-export function AssistantBar() {
-  const { user } = useAuth()
+interface AssistantDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+/** Opened from the app shell: the sidebar, the mobile quick-add sheet, or Ctrl/Cmd+K. */
+export function AssistantDialog({ open, onOpenChange }: AssistantDialogProps) {
   const { describe, execute, buildContext } = useAssistantActions()
 
-  const [open, setOpen] = useState(false)
   const [text, setText] = useState("")
   const [thinking, setThinking] = useState(false)
   const [running, setRunning] = useState(false)
@@ -168,24 +171,12 @@ export function AssistantBar() {
     }
   }
 
-  if (!user) return null
-
   return (
     <>
-      <Button
-        onClick={() => setOpen(true)}
-        className="fixed right-4 z-40 h-14 w-14 rounded-full shadow-lg bg-accent hover:bg-accent/90 p-0"
-        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-        title="Ask PaisaTrack"
-      >
-        <Sparkles className="h-6 w-6" />
-        <span className="sr-only">Open assistant</span>
-      </Button>
-
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          setOpen(next)
+          onOpenChange(next)
           if (!next) {
             recognitionRef.current?.abort?.()
             setListening(false)
@@ -196,8 +187,13 @@ export function AssistantBar() {
         <DialogContent
           className="top-4 max-h-[calc(100dvh-2rem)] translate-y-0 gap-3 overflow-y-auto p-4 sm:top-1/2 sm:max-w-lg sm:-translate-y-1/2 sm:gap-4 sm:p-6"
         >
-          <DialogHeader>
-            <DialogTitle>Just say it</DialogTitle>
+          <DialogHeader className="text-left">
+            <DialogTitle className="flex items-center gap-2">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-primary/12 text-primary">
+                <Sparkles className="size-4" />
+              </span>
+              Just say it
+            </DialogTitle>
             <DialogDescription>
               Tell me what happened and I will fill it in. Nothing is saved until you confirm.
             </DialogDescription>
@@ -227,12 +223,12 @@ export function AssistantBar() {
               <Button
                 type="submit"
                 disabled={thinking || !text.trim()}
-                className="h-11 flex-1 bg-accent hover:bg-accent/90"
+                className="h-11 flex-1"
               >
                 {thinking ? <Loader2 className="h-4 w-4 animate-spin" /> : "Go"}
               </Button>
             </div>
-            {listening && <p className="text-xs text-accent">Listening - tap the mic again to stop</p>}
+            {listening && <p className="text-xs text-primary">Listening - tap the mic again to stop</p>}
           </form>
 
           {!reply && !actions.length && !done.length && !thinking && (
@@ -244,7 +240,7 @@ export function AssistantBar() {
                     key={example}
                     type="button"
                     onClick={() => setText(example)}
-                    className="text-xs px-3 py-2 rounded-md bg-muted active:bg-muted/60 hover:bg-muted/70 text-muted-foreground text-left"
+                    className="text-xs px-3 py-2 rounded-full border bg-muted/50 active:bg-muted hover:bg-accent hover:text-foreground text-muted-foreground text-left transition-colors"
                   >
                     {example}
                   </button>
@@ -259,7 +255,7 @@ export function AssistantBar() {
             <div className="space-y-3">
               <div className="space-y-2">
                 {actions.map((action, index) => (
-                  <div key={index} className="p-3 bg-muted rounded-lg text-sm">
+                  <div key={index} className="p-3 border bg-muted/50 rounded-xl text-sm">
                     {describe(action)}
                   </div>
                 ))}
@@ -269,7 +265,7 @@ export function AssistantBar() {
                   <X className="h-4 w-4 mr-2" />
                   Cancel
                 </Button>
-                <Button className="h-11 flex-1 bg-accent hover:bg-accent/90" onClick={confirm} disabled={running}>
+                <Button className="h-11 flex-1" onClick={confirm} disabled={running}>
                   {running ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
@@ -288,7 +284,7 @@ export function AssistantBar() {
               {done.map((result, index) => (
                 <p
                   key={index}
-                  className={`text-sm ${result.startsWith("Failed:") ? "text-destructive" : "text-green-500"}`}
+                  className={`text-sm ${result.startsWith("Failed:") ? "text-destructive" : "text-positive"}`}
                 >
                   {result}
                 </p>

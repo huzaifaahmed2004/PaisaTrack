@@ -1,40 +1,94 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/hooks/use-auth"
+import { useMemo, useState } from "react"
+import { MoreHorizontal, Pencil, ReceiptText, Search, SlidersHorizontal, Trash2, X } from "lucide-react"
 import { useAccounts } from "@/hooks/use-accounts"
+import { useBudgets } from "@/hooks/use-budgets"
 import { useTransactions } from "@/hooks/use-transactions"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { EditTransactionModal } from "@/components/edit-transaction-modal"
-import { Loader2, ArrowLeft, Filter, ArrowUpRight, ArrowDownRight, Edit, Trash2, TrendingUp } from "lucide-react"
-import { endOfDay, formatPKR, startOfDay, transactionSign } from "@/lib/money"
+import { useConfirm } from "@/components/confirm-dialog"
+import { useQuickActions } from "@/components/app-shell"
+import { Amount, EmptyState, PageHeader } from "@/components/app-ui"
+import { TransactionRow } from "@/components/transaction-row"
+import { endOfDay, startOfDay } from "@/lib/money"
+import { flowBetween, groupByDay } from "@/lib/insights"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import type { Transaction } from "@/lib/types"
 
+type Kind = "all" | "in" | "out" | "transfers" | "loans"
+
+const KINDS: { value: Kind; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "out", label: "Spent" },
+  { value: "in", label: "Received" },
+  { value: "transfers", label: "Transfers" },
+  { value: "loans", label: "Loans" },
+]
+
+const matchesKind = (transaction: Transaction, kind: Kind) => {
+  switch (kind) {
+    case "in":
+      return transaction.type === "income" && !transaction.transferId && !transaction.loanId
+    case "out":
+      return transaction.type === "spend" && !transaction.transferId && !transaction.loanId
+    case "transfers":
+      return !!transaction.transferId
+    case "loans":
+      return !!transaction.loanId
+    default:
+      return true
+  }
+}
+
+const EMPTY_FILTERS = { search: "", kind: "all" as Kind, account: "all", dateFrom: "", dateTo: "" }
+
 export default function TransactionsPage() {
-  const { user, loading } = useAuth()
   const { accounts } = useAccounts()
+  const { budgets } = useBudgets()
   const { transactions, deleteTransaction } = useTransactions()
-  const router = useRouter()
+  const confirm = useConfirm()
+  const { open, canRun } = useQuickActions()
 
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
-  const [filters, setFilters] = useState({
-    account: "all",
-    type: "all",
-    dateFrom: "",
-    dateTo: "",
-  })
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [showMore, setShowMore] = useState(false)
 
-  useEffect(() => {
-    if (!user && !loading) {
-      router.push("/")
-    }
-  }, [user, loading, router])
+  const accountName = (id: string) => accounts.find((account) => account.id === id)?.name
+  const budgetName = (id?: string) => (id ? budgets.find((budget) => budget.id === id)?.name : undefined)
+
+  const filtered = useMemo(() => {
+    const needle = filters.search.trim().toLowerCase()
+    return transactions.filter((transaction) => {
+      if (filters.account !== "all" && transaction.accountId !== filters.account) return false
+      if (!matchesKind(transaction, filters.kind)) return false
+      // Both bounds are inclusive of the day the user picked, in local time.
+      if (filters.dateFrom && transaction.date < startOfDay(filters.dateFrom)) return false
+      if (filters.dateTo && transaction.date > endOfDay(filters.dateTo)) return false
+      if (needle && !transaction.description.toLowerCase().includes(needle)) return false
+      return true
+    })
+  }, [transactions, filters])
+
+  const groups = useMemo(() => groupByDay(filtered), [filtered])
+  const totals = useMemo(() => flowBetween(filtered, new Date(0), new Date(8.64e15)), [filtered])
+
+  const isFiltered =
+    filters.search !== "" ||
+    filters.kind !== "all" ||
+    filters.account !== "all" ||
+    filters.dateFrom !== "" ||
+    filters.dateTo !== ""
 
   const handleEditTransaction = (transaction: Transaction) => {
     setSelectedTransaction(transaction)
@@ -42,264 +96,243 @@ export default function TransactionsPage() {
   }
 
   const handleDeleteTransaction = async (transaction: Transaction) => {
-    const warning = transaction.transferId
-      ? "Delete this transfer? Both sides will be removed and the balances put back."
-      : "Delete this transaction? The amount will be put back on its account. This cannot be undone."
+    const ok = await confirm({
+      title: transaction.transferId ? "Delete this transfer?" : "Delete this transaction?",
+      description: transaction.transferId
+        ? "Both sides will be removed and the balances put back."
+        : "The amount will be put back on its account. This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    })
+    if (!ok) return
 
-    if (confirm(warning)) {
-      try {
-        // Removing an entry also reverses the money it moved.
-        await deleteTransaction(transaction)
-        toast.success("Transaction deleted")
-      } catch (error: any) {
-        console.error("Error deleting transaction:", error)
-        toast.error(error?.message || "Failed to delete transaction")
-      }
+    try {
+      // Removing an entry also reverses the money it moved.
+      await deleteTransaction(transaction)
+      toast.success("Transaction deleted")
+    } catch (error: any) {
+      console.error("Error deleting transaction:", error)
+      toast.error(error?.message || "Failed to delete transaction")
     }
   }
 
-  const filteredTransactions = transactions.filter((transaction) => {
-    if (filters.account !== "all" && transaction.accountId !== filters.account) return false
-    if (filters.type !== "all" && transaction.type !== filters.type) return false
-    // Both bounds are inclusive of the day the user picked, in local time.
-    if (filters.dateFrom && transaction.date < startOfDay(filters.dateFrom)) return false
-    if (filters.dateTo && transaction.date > endOfDay(filters.dateTo)) return false
-    return true
-  })
+  const editBlockedReason = (transaction: Transaction) =>
+    transaction.loanId
+      ? "Edit this from the Loans page"
+      : transaction.subscriptionId
+        ? "Edit this from the Bills page"
+        : transaction.transferId
+          ? "Transfers cannot be edited - delete and record it again"
+          : null
 
-  const getTransactionIcon = (type: string) => {
-    switch (type) {
-      case "income":
-        return <ArrowUpRight className="h-4 w-4 text-green-500" />
-      case "spend":
-        return <ArrowDownRight className="h-4 w-4 text-red-500" />
-      case "loan-given":
-        return <ArrowUpRight className="h-4 w-4 text-blue-500" />
-      case "loan-taken":
-        return <ArrowDownRight className="h-4 w-4 text-orange-500" />
-      default:
-        return <TrendingUp className="h-4 w-4" />
-    }
-  }
-
-  const getTransactionColor = (type: string) => {
-    switch (type) {
-      case "income":
-        return "text-green-500"
-      case "spend":
-        return "text-red-500"
-      case "loan-given":
-        return "text-blue-500"
-      case "loan-taken":
-        return "text-orange-500"
-      default:
-        return "text-foreground"
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
+  const deleteBlockedReason = (transaction: Transaction) =>
+    transaction.loanId
+      ? "Delete this from the Loans page"
+      : transaction.subscriptionId
+        ? "Undo this from the Bills page"
+        : null
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border p-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold">Transaction History</h1>
+    <div className="space-y-5">
+      <PageHeader
+        title="Activity"
+        description={`${filtered.length} transaction${filtered.length !== 1 ? "s" : ""}${isFiltered ? " match your filters" : ""}`}
+        actions={
+          <Button onClick={() => open("spend")} disabled={!canRun("spend")} className="hidden md:inline-flex">
+            Add expense
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-3 divide-x rounded-2xl border bg-card py-3 shadow-xs">
+        {[
+          { label: "Money in", value: <Amount value={totals.income} />, className: "text-positive" },
+          { label: "Money out", value: <Amount value={totals.spend} /> },
+          {
+            label: "Net",
+            value: <Amount value={Math.abs(totals.net)} sign={totals.net < 0 ? "-" : "+"} />,
+            className: totals.net < 0 ? "text-negative" : "text-positive",
+          },
+        ].map((stat) => (
+          <div key={stat.label} className="min-w-0 px-3 md:px-5">
+            <p className="text-xs text-muted-foreground">{stat.label}</p>
+            <p className={cn("mt-0.5 truncate text-[15px] font-semibold md:text-xl", stat.className)}>{stat.value}</p>
           </div>
-          <div className="text-sm text-muted-foreground">
-            {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? "s" : ""}
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={filters.search}
+              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+              placeholder="Search descriptions"
+              className="h-10 rounded-xl bg-card pl-9"
+            />
           </div>
+          <Button
+            variant="outline"
+            onClick={() => setShowMore((value) => !value)}
+            className={cn("h-10 rounded-xl", showMore && "border-primary/50 text-primary")}
+          >
+            <SlidersHorizontal />
+            <span className="hidden sm:inline">Filters</span>
+          </Button>
         </div>
-      </header>
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
-        {/* Filters */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filters
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Account</label>
-                <Select value={filters.account} onValueChange={(value) => setFilters({ ...filters, account: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Accounts</SelectItem>
-                    {accounts.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Type</label>
-                <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="income">Income</SelectItem>
-                    <SelectItem value="spend">Expense</SelectItem>
-                    <SelectItem value="loan-given">Loan Given</SelectItem>
-                    <SelectItem value="loan-taken">Loan Taken</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">From Date</label>
-                <Input
-                  type="date"
-                  value={filters.dateFrom}
-                  onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">To Date</label>
-                <Input
-                  type="date"
-                  value={filters.dateTo}
-                  onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                />
-              </div>
+        <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:px-0">
+          {KINDS.map((kind) => (
+            <button
+              key={kind.value}
+              type="button"
+              onClick={() => setFilters({ ...filters, kind: kind.value })}
+              className={cn(
+                "shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                filters.kind === kind.value
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {kind.label}
+            </button>
+          ))}
+          {isFiltered && (
+            <button
+              type="button"
+              onClick={() => setFilters(EMPTY_FILTERS)}
+              className="flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+              Clear
+            </button>
+          )}
+        </div>
+
+        {showMore && (
+          <div className="grid grid-cols-1 gap-3 rounded-2xl border bg-card p-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Account</label>
+              <Select value={filters.account} onValueChange={(value) => setFilters({ ...filters, account: value })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All accounts</SelectItem>
+                  {accounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            {(filters.account !== "all" || filters.type !== "all" || filters.dateFrom || filters.dateTo) && (
-              <div className="mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFilters({ account: "all", type: "all", dateFrom: "", dateTo: "" })}
-                >
-                  Clear Filters
-                </Button>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">From</label>
+              <Input
+                type="date"
+                value={filters.dateFrom}
+                onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">To</label>
+              <Input
+                type="date"
+                value={filters.dateTo}
+                onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Transactions, grouped by day */}
+      {groups.length > 0 ? (
+        <div className="space-y-4">
+          {groups.map((group) => (
+            <section key={group.key} className="rounded-2xl border bg-card p-2 shadow-xs md:p-3">
+              <div className="flex items-center justify-between px-2 pt-1 pb-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</h2>
+                {group.net !== 0 && (
+                  <Amount
+                    value={Math.abs(group.net)}
+                    sign={group.net < 0 ? "-" : "+"}
+                    className="text-xs font-medium text-muted-foreground"
+                  />
+                )}
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Transactions List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Transactions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {filteredTransactions.length > 0 ? (
-              <div className="space-y-3">
-                {filteredTransactions.map((transaction) => {
-                  const account = accounts.find((acc) => acc.id === transaction.accountId)
-
+              <div className="space-y-0.5">
+                {group.items.map((transaction) => {
+                  const editBlocked = editBlockedReason(transaction)
+                  const deleteBlocked = deleteBlockedReason(transaction)
                   return (
-                    <div
+                    <TransactionRow
                       key={transaction.id}
-                      className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
-                    >
-                      <div className="flex items-start md:items-center gap-4">
-                        <div className="p-2 rounded-full bg-background">{getTransactionIcon(transaction.type)}</div>
-                        <div className="min-w-0">
-                          <h3 className="font-medium truncate">{transaction.description}</h3>
-                          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                            <span className="truncate max-w-[140px] sm:max-w-[200px]">{account?.name}</span>
-                            <span className="hidden sm:inline">•</span>
-                            <span className="capitalize">{transaction.type.replace("-", " ")}</span>
-                            <span className="hidden sm:inline">•</span>
-                            <span>{transaction.date.toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between md:justify-end gap-4">
-                        <div className="text-right">
-                          <p className={`text-base sm:text-lg font-semibold ${getTransactionColor(transaction.type)}`}>
-                            {transactionSign(transaction.type)}PKR {formatPKR(transaction.amount)}
-                          </p>
-                        </div>
-                        <div className="flex gap-1 sm:gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditTransaction(transaction)}
-                            disabled={
-                              !!transaction.loanId || !!transaction.transferId || !!transaction.subscriptionId
-                            }
-                            title={
-                              transaction.loanId
-                                ? "Edit this from the Loans page"
-                                : transaction.subscriptionId
-                                  ? "Edit this from the Subscriptions page"
-                                  : transaction.transferId
-                                    ? "Transfers cannot be edited - delete and record it again"
-                                    : "Edit transaction"
-                            }
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteTransaction(transaction)}
-                            disabled={!!transaction.loanId || !!transaction.subscriptionId}
-                            title={
-                              transaction.loanId
-                                ? "Delete this from the Loans page"
-                                : transaction.subscriptionId
-                                  ? "Undo this from the Subscriptions page"
-                                  : "Delete transaction"
-                            }
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                      transaction={transaction}
+                      accountName={accountName(transaction.accountId)}
+                      budgetName={budgetName(transaction.budgetId)}
+                      actions={
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground">
+                              <MoreHorizontal />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuItem
+                              disabled={!!editBlocked}
+                              onSelect={() => handleEditTransaction(transaction)}
+                            >
+                              <Pencil />
+                              {editBlocked ?? "Edit"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              disabled={!!deleteBlocked}
+                              onSelect={() => handleDeleteTransaction(transaction)}
+                            >
+                              <Trash2 />
+                              {deleteBlocked ?? "Delete"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      }
+                    />
                   )
                 })}
               </div>
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                <TrendingUp className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">No transactions found</h3>
-                <p className="text-sm mb-4">
-                  {transactions.length === 0
-                    ? "Start adding transactions to see them here"
-                    : "Try adjusting your filters to see more transactions"}
-                </p>
-                <Button onClick={() => router.push("/dashboard")} className="bg-accent hover:bg-accent/90">
-                  Go to Dashboard
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border bg-card">
+          <EmptyState
+            icon={ReceiptText}
+            title="No transactions found"
+            description={
+              transactions.length === 0
+                ? "Start adding transactions to see them here."
+                : "Try adjusting your search or filters."
+            }
+            action={
+              isFiltered ? (
+                <Button variant="outline" onClick={() => setFilters(EMPTY_FILTERS)}>
+                  Clear filters
                 </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </main>
+              ) : (
+                <Button onClick={() => open("spend")} disabled={!canRun("spend")}>
+                  Add expense
+                </Button>
+              )
+            }
+          />
+        </div>
+      )}
 
-      {/* Edit Modal */}
       <EditTransactionModal
         open={editModalOpen}
         onOpenChange={setEditModalOpen}

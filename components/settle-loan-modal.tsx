@@ -90,7 +90,7 @@ export function SettleLoanModal({ open, onOpenChange, loan }: SettleLoanModalPro
             <Button type="button" variant="outline" className="flex-1" onClick={resetAndClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading || !loan} className="flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading || !loan} className="flex-1">
               {loading ? "Settling..." : "Confirm Settle"}
             </Button>
           </div>

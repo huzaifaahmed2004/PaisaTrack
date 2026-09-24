@@ -1,25 +1,30 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/hooks/use-auth"
+import { useState } from "react"
+import { CalendarClock, MoreHorizontal, Pause, Pencil, Play, Plus, Trash2, Undo2 } from "lucide-react"
 import { useAccounts } from "@/hooks/use-accounts"
 import { useSubscriptions } from "@/hooks/use-subscriptions"
 import { useSpendable } from "@/hooks/use-spendable"
 import { PayWindowCard } from "@/components/pay-window-card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { SubscriptionModal } from "@/components/subscription-modal"
 import { PaySubscriptionModal } from "@/components/pay-subscription-modal"
-import { Loader2, ArrowLeft, Plus, Edit, Trash2, RefreshCw, Undo2, Pause, Play } from "lucide-react"
-import { formatPKR } from "@/lib/money"
+import { useConfirm } from "@/components/confirm-dialog"
+import { Amount, EmptyState, PageHeader, StatCard } from "@/components/app-ui"
 import { dueStatus, dueStatusLabel, ordinalDay } from "@/lib/recurrence"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import type { Subscription } from "@/lib/types"
 
 export default function SubscriptionsPage() {
-  const { user, loading } = useAuth()
   const { accounts } = useAccounts()
   const {
     subscriptions,
@@ -32,18 +37,17 @@ export default function SubscriptionsPage() {
     undoLastPayment,
   } = useSubscriptions()
   const { reservedForBills, heldBills, holdUntil } = useSpendable()
-  const router = useRouter()
+  const confirm = useConfirm()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Subscription | null>(null)
   const [payOpen, setPayOpen] = useState(false)
   const [paying, setPaying] = useState<Subscription | null>(null)
 
-  useEffect(() => {
-    if (!user && !loading) {
-      router.push("/")
-    }
-  }, [user, loading, router])
+  const openNew = () => {
+    setEditing(null)
+    setFormOpen(true)
+  }
 
   const handleEdit = (subscription: Subscription) => {
     setEditing(subscription)
@@ -56,9 +60,12 @@ export default function SubscriptionsPage() {
   }
 
   const handleUndo = async (subscription: Subscription) => {
-    if (!confirm(`Undo the last payment for ${subscription.name}? The money goes back and it becomes due again.`)) {
-      return
-    }
+    const ok = await confirm({
+      title: `Undo the last payment for ${subscription.name}?`,
+      description: "The money goes back and it becomes due again.",
+      confirmLabel: "Undo payment",
+    })
+    if (!ok) return
 
     try {
       await undoLastPayment(subscription)
@@ -72,157 +79,125 @@ export default function SubscriptionsPage() {
   const handleTogglePause = async (subscription: Subscription) => {
     try {
       await setActive(subscription, !subscription.active)
-      toast.success(subscription.active ? "Subscription paused" : "Subscription resumed")
+      toast.success(subscription.active ? "Bill paused" : "Bill resumed")
     } catch (error: any) {
       console.error("Failed to update subscription:", error)
-      toast.error(error?.message || "Failed to update subscription")
+      toast.error(error?.message || "Failed to update bill")
     }
   }
 
   const handleDelete = async (subscription: Subscription) => {
-    if (
-      !confirm(
-        `Delete ${subscription.name}? Payments you already recorded stay in your transaction history. This cannot be undone.`,
-      )
-    ) {
-      return
-    }
+    const ok = await confirm({
+      title: `Delete ${subscription.name}?`,
+      description: "Payments you already recorded stay in your transaction history. This cannot be undone.",
+      confirmLabel: "Delete bill",
+      destructive: true,
+    })
+    if (!ok) return
 
     try {
       await deleteSubscription(subscription.id)
-      toast.success("Subscription deleted")
+      toast.success("Bill deleted")
     } catch (error: any) {
       console.error("Failed to delete subscription:", error)
-      toast.error(error?.message || "Failed to delete subscription")
+      toast.error(error?.message || "Failed to delete bill")
     }
   }
 
-  if (loading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
-
-  const renderCard = (subscription: Subscription) => {
+  const renderRow = (subscription: Subscription) => {
     const status = dueStatus(subscription.nextDueDate)
     const isDue = subscription.active && (status === "overdue" || status === "due-today")
     const account = accounts.find((entry) => entry.id === subscription.accountId)
+    const due = subscription.nextDueDate
 
     return (
       <div
         key={subscription.id}
-        className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+        className={cn(
+          "flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-accent/60",
+          !subscription.active && "opacity-60",
+        )}
       >
-        <div className="flex items-start md:items-center gap-4 min-w-0">
-          <div
-            className={`p-2 rounded-full ${
-              !subscription.active
-                ? "bg-muted-foreground/20"
-                : status === "overdue"
-                  ? "bg-red-500/20"
-                  : status === "due-today"
-                    ? "bg-orange-500/20"
-                    : "bg-accent/20"
-            }`}
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${
-                !subscription.active
-                  ? "text-muted-foreground"
-                  : status === "overdue"
-                    ? "text-red-500"
-                    : status === "due-today"
-                      ? "text-orange-500"
-                      : "text-accent"
-              }`}
-            />
-          </div>
-          <div className="min-w-0">
-            <h3 className="font-medium truncate">{subscription.name}</h3>
-            {subscription.description && (
-              <p className="text-sm text-muted-foreground break-words">{subscription.description}</p>
-            )}
-            <div className="flex flex-wrap items-center gap-2 mt-1">
-              <span className="text-xs text-muted-foreground">
-                {ordinalDay(subscription.dayOfMonth)} of each month
-              </span>
-              {subscription.active ? (
-                <Badge
-                  variant={status === "overdue" ? "destructive" : status === "due-today" ? "default" : "secondary"}
-                  className="text-xs"
-                >
-                  {dueStatusLabel(subscription.nextDueDate)}
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-xs">
-                  paused
-                </Badge>
-              )}
-              {account && <span className="text-xs text-muted-foreground">via {account.name}</span>}
-            </div>
-            {subscription.lastPaidAt && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Last paid {subscription.lastPaidAt.toLocaleDateString()}
-              </p>
-            )}
-          </div>
+        {/* A tear-off calendar date: the day it falls due. */}
+        <div
+          className={cn(
+            "flex size-11 shrink-0 flex-col items-center justify-center overflow-hidden rounded-xl border text-center leading-none",
+            isDue && status === "overdue" && "border-negative/40 bg-negative/8",
+            isDue && status === "due-today" && "border-warning/40 bg-warning/8",
+          )}
+        >
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {due.toLocaleDateString(undefined, { month: "short" })}
+          </span>
+          <span className="mt-0.5 text-base font-semibold tabular-nums">{due.getDate()}</span>
         </div>
-
-        <div className="flex items-center justify-between md:justify-end gap-3">
-          <p className="text-base sm:text-lg font-semibold whitespace-nowrap">
-            PKR {formatPKR(subscription.amount)}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="truncate text-sm font-medium">{subscription.name}</p>
+            {subscription.active ? (
+              <Badge variant={status === "overdue" ? "negative" : status === "due-today" ? "warning" : status === "due-soon" ? "info" : "muted"}>
+                {dueStatusLabel(due)}
+              </Badge>
+            ) : (
+              <Badge variant="outline">paused</Badge>
+            )}
+          </div>
+          <p className="truncate text-xs text-muted-foreground">
+            {[
+              `${ordinalDay(subscription.dayOfMonth)} of each month`,
+              account && `via ${account.name}`,
+              subscription.lastPaidAt && `last paid ${subscription.lastPaidAt.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
-          <div className="flex flex-wrap gap-1 sm:gap-2 justify-end">
-            {subscription.active && (
-              <Button
-                size="sm"
-                onClick={() => handlePay(subscription)}
-                className={isDue ? "bg-accent hover:bg-accent/90" : ""}
-                variant={isDue ? "default" : "outline"}
-              >
-                Mark Paid
-              </Button>
+        </div>
+        <Amount value={subscription.amount} className="text-sm font-semibold" />
+        {subscription.active && (
+          <Button
+            size="sm"
+            variant={isDue ? "default" : "outline"}
+            onClick={() => handlePay(subscription)}
+            className={cn(!isDue && "hidden sm:inline-flex")}
+          >
+            Pay
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground">
+              <MoreHorizontal />
+              <span className="sr-only">Actions</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {subscription.active && !isDue && (
+              <DropdownMenuItem onSelect={() => handlePay(subscription)} className="sm:hidden">
+                <CalendarClock />
+                Mark paid
+              </DropdownMenuItem>
             )}
             {subscription.lastPaymentId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleUndo(subscription)}
-                title="Undo the last payment"
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Undo2 className="h-4 w-4" />
-              </Button>
+              <DropdownMenuItem onSelect={() => handleUndo(subscription)}>
+                <Undo2 />
+                Undo last payment
+              </DropdownMenuItem>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleTogglePause(subscription)}
-              title={subscription.active ? "Pause" : "Resume"}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {subscription.active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleEdit(subscription)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Edit className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleDelete(subscription)}
-              className="text-muted-foreground hover:text-destructive"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+            <DropdownMenuItem onSelect={() => handleTogglePause(subscription)}>
+              {subscription.active ? <Pause /> : <Play />}
+              {subscription.active ? "Pause" : "Resume"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => handleEdit(subscription)}>
+              <Pencil />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => handleDelete(subscription)}>
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     )
   }
@@ -231,124 +206,78 @@ export default function SubscriptionsPage() {
   const paused = subscriptions.filter((subscription) => !subscription.active)
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border p-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold">Monthly Subscriptions</h1>
-          </div>
-          <Button
-            onClick={() => {
-              setEditing(null)
-              setFormOpen(true)
-            }}
-            className="bg-accent hover:bg-accent/90"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Subscription
+    <div className="space-y-5">
+      <PageHeader
+        title="Bills"
+        description="Rent, internet, streaming and everything else that comes round each month"
+        actions={
+          <Button onClick={openNew}>
+            <Plus />
+            Add bill
           </Button>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Every Month</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">PKR {formatPKR(monthlyTotal)}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {activeSubscriptions.length} active subscription{activeSubscriptions.length !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Waiting to be Paid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${dueTotal > 0 ? "text-orange-500" : ""}`}>
-                PKR {formatPKR(dueTotal)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {dueSubscriptions.length} due or overdue
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Held for Bills</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-accent">PKR {formatPKR(reservedForBills)}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {heldBills.length} bill{heldBills.length !== 1 ? "s" : ""} due by {holdUntil.toLocaleDateString()} - not
-                free to spend
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+        <StatCard
+          label="Every month"
+          value={<Amount value={monthlyTotal} />}
+          hint={`${activeSubscriptions.length} active bill${activeSubscriptions.length !== 1 ? "s" : ""}`}
+        />
+        <StatCard
+          label="Waiting to be paid"
+          value={<Amount value={dueTotal} />}
+          hint={`${dueSubscriptions.length} due or overdue`}
+          tone={dueTotal > 0 ? "warning" : "default"}
+        />
+        <StatCard
+          label="Held for bills"
+          value={<Amount value={reservedForBills} />}
+          hint={`${heldBills.length} due by ${holdUntil.toLocaleDateString(undefined, { day: "numeric", month: "short" })} - not free to spend`}
+          tone="primary"
+          className="col-span-2 md:col-span-1"
+        />
+      </div>
 
-        <PayWindowCard reservedForBills={reservedForBills} holdUntil={holdUntil} />
+      {dueSubscriptions.length > 0 && (
+        <section className="rounded-2xl border border-warning/30 bg-card p-3 shadow-xs md:p-4">
+          <div className="px-2 pb-2">
+            <h2 className="font-semibold">Due now</h2>
+            <p className="text-xs text-muted-foreground">
+              Hit Pay once the money has actually gone out - that is when it comes off your balance.
+            </p>
+          </div>
+          <div className="space-y-0.5">{dueSubscriptions.map(renderRow)}</div>
+        </section>
+      )}
 
-        {dueSubscriptions.length > 0 && (
-          <Card className="border-orange-500/40">
-            <CardHeader>
-              <CardTitle className="text-lg">Due now</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Hit Mark Paid once the money has actually gone out - that is when it comes off your balance.
-              </p>
-              {dueSubscriptions.map(renderCard)}
-            </CardContent>
-          </Card>
+      <section className="rounded-2xl border bg-card p-3 shadow-xs md:p-4">
+        <h2 className="px-2 pb-2 font-semibold">Upcoming</h2>
+        {notDue.length > 0 ? (
+          <div className="space-y-0.5">{notDue.map(renderRow)}</div>
+        ) : (
+          <EmptyState
+            icon={CalendarClock}
+            title={activeSubscriptions.length > 0 ? "Nothing else coming up" : "No bills yet"}
+            description="Add the bills you pay every month - rent, internet, streaming, the gym."
+            action={
+              <Button onClick={openNew}>
+                <Plus />
+                Add bill
+              </Button>
+            }
+          />
         )}
+      </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Upcoming</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {notDue.length > 0 ? (
-              <div className="space-y-3">{notDue.map(renderCard)}</div>
-            ) : (
-              <div className="text-center py-10 text-muted-foreground">
-                <RefreshCw className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">
-                  {activeSubscriptions.length > 0 ? "Nothing else coming up" : "No subscriptions yet"}
-                </h3>
-                <p className="text-sm mb-4">
-                  Add the bills you pay every month - rent, internet, streaming, the gym.
-                </p>
-                <Button
-                  onClick={() => {
-                    setEditing(null)
-                    setFormOpen(true)
-                  }}
-                  className="bg-accent hover:bg-accent/90"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Subscription
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {paused.length > 0 && (
+        <section className="rounded-2xl border bg-card p-3 shadow-xs md:p-4">
+          <h2 className="px-2 pb-2 font-semibold">Paused</h2>
+          <div className="space-y-0.5">{paused.map(renderRow)}</div>
+        </section>
+      )}
 
-        {paused.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Paused</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">{paused.map(renderCard)}</CardContent>
-          </Card>
-        )}
-      </main>
+      <PayWindowCard reservedForBills={reservedForBills} holdUntil={holdUntil} />
 
       <SubscriptionModal
         open={formOpen}

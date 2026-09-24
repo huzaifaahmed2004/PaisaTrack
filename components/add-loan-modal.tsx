@@ -197,7 +197,7 @@ export function AddLoanModal({ open, onOpenChange }: AddLoanModalProps) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading} className="flex-1">
               {loading ? "Adding..." : formData.carriedOver ? "Record Existing Loan" : "Add Loan"}
             </Button>
           </div>

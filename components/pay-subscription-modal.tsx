@@ -122,7 +122,7 @@ export function PaySubscriptionModal({ open, onOpenChange, subscription, onClose
             <Button
               type="submit"
               disabled={loading || !subscription || accounts.length === 0}
-              className="flex-1 bg-accent hover:bg-accent/90"
+              className="flex-1"
             >
               {loading ? "Recording..." : "Confirm Payment"}
             </Button>

@@ -146,7 +146,7 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
                 </SelectContent>
               </Select>
               {selectedBudget && wouldOverspend > 0 && (
-                <p className="text-xs text-orange-500">
+                <p className="text-xs text-warning">
                   This takes {selectedBudget.budget.name} PKR {formatPKR(wouldOverspend)} over budget.
                 </p>
               )}
@@ -177,7 +177,7 @@ export function AddTransactionModal({ open, onOpenChange, type }: AddTransaction
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading} className="flex-1">
               {loading ? "Adding..." : `Add ${type === "income" ? "Income" : "Expense"}`}
             </Button>
           </div>

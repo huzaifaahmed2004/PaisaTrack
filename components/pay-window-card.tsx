@@ -78,7 +78,7 @@ export function PayWindowCard({ reservedForBills, holdUntil }: PayWindowCardProp
             <Label htmlFor="payLatest">Latest day</Label>
             <DayStepper id="payLatest" value={latest} onChange={setLatest} placeholder="13" className="w-36" />
           </div>
-          <Button type="submit" disabled={saving} className="h-11 bg-accent hover:bg-accent/90">
+          <Button type="submit" disabled={saving} className="h-11">
             Save
           </Button>
           {payWindow && (

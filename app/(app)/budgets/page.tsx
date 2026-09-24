@@ -1,20 +1,24 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/hooks/use-auth"
+import { useState } from "react"
+import { MoreHorizontal, Pencil, PieChart, Plus, Trash2 } from "lucide-react"
 import { useBudgets } from "@/hooks/use-budgets"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { BudgetModal } from "@/components/budget-modal"
-import { Loader2, ArrowLeft, Plus, Edit, Trash2, PieChart } from "lucide-react"
+import { useConfirm } from "@/components/confirm-dialog"
+import { Amount, Callout, EmptyState, Meter, PageHeader, StatCard, budgetTone } from "@/components/app-ui"
 import { formatPeriod, type BudgetUsage } from "@/lib/budget"
-import { formatPKR } from "@/lib/money"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import type { Budget } from "@/lib/types"
 
 export default function BudgetsPage() {
-  const { user, loading } = useAuth()
   const {
     usage,
     period,
@@ -27,16 +31,10 @@ export default function BudgetsPage() {
     freeToSpend,
     deleteBudget,
   } = useBudgets()
-  const router = useRouter()
+  const confirm = useConfirm()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Budget | null>(null)
-
-  useEffect(() => {
-    if (!user && !loading) {
-      router.push("/")
-    }
-  }, [user, loading, router])
 
   const openNew = () => {
     setEditing(null)
@@ -44,13 +42,13 @@ export default function BudgetsPage() {
   }
 
   const handleDelete = async (budget: Budget) => {
-    if (
-      !confirm(
-        `Delete the ${budget.name} budget? Expenses already tagged with it stay in your history and count as unbudgeted.`,
-      )
-    ) {
-      return
-    }
+    const ok = await confirm({
+      title: `Delete the ${budget.name} budget?`,
+      description: "Expenses already tagged with it stay in your history and count as unbudgeted.",
+      confirmLabel: "Delete budget",
+      destructive: true,
+    })
+    if (!ok) return
 
     try {
       await deleteBudget(budget.id)
@@ -61,177 +59,181 @@ export default function BudgetsPage() {
     }
   }
 
-  if (loading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
+  // How far through the cycle today is, so each budget can be judged against pace.
+  const cycleProgress = Math.min(
+    Math.max(((Date.now() - period.start.getTime()) / (period.end.getTime() - period.start.getTime())) * 100, 0),
+    100,
+  )
+  const overallProgress = totalLimit > 0 ? Math.min((totalSpent / totalLimit) * 100, 100) : 0
 
   const renderBudget = (entry: BudgetUsage) => {
     const over = entry.overBy > 0
-    const near = !over && entry.progress >= 80
+    const tone = budgetTone(entry.progress, over)
 
     return (
-      <div key={entry.budget.id} className="p-4 bg-muted rounded-lg space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div key={entry.budget.id} className="rounded-2xl border bg-card p-4 shadow-xs">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="font-semibold truncate">{entry.budget.name}</h3>
+            <p className="truncate font-medium">{entry.budget.name}</p>
             <p className="text-xs text-muted-foreground">
               {entry.entries} expense{entry.entries !== 1 ? "s" : ""} this cycle
             </p>
           </div>
-          <div className="text-right">
-            <p className={`text-lg font-bold whitespace-nowrap ${over ? "text-red-500" : ""}`}>
-              PKR {formatPKR(entry.spent)}
-            </p>
-            <p className="text-xs text-muted-foreground whitespace-nowrap">of PKR {formatPKR(entry.budget.limit)}</p>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="-mt-1 -mr-1 text-muted-foreground">
+                <MoreHorizontal />
+                <span className="sr-only">Actions</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() => {
+                  setEditing(entry.budget)
+                  setFormOpen(true)
+                }}
+              >
+                <Pencil />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onSelect={() => handleDelete(entry.budget)}>
+                <Trash2 />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
-        <div className="space-y-1">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-background">
-            <div
-              className={`h-full rounded-full transition-all ${
-                over ? "bg-red-500" : near ? "bg-orange-500" : "bg-green-500"
-              }`}
-              style={{ width: `${over ? 100 : entry.progress}%` }}
-            />
-          </div>
-          <p className={`text-xs ${over ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-            {over
-              ? `PKR ${formatPKR(entry.overBy)} over budget`
-              : `PKR ${formatPKR(entry.remaining)} left - ${Math.round(entry.progress)}% used`}
-          </p>
+        <div className="mt-4 flex items-baseline gap-1.5">
+          <Amount value={entry.spent} className={cn("text-2xl font-semibold tracking-tight", over && "text-negative")} />
+          <span className="text-sm text-muted-foreground">
+            of <Amount value={entry.budget.limit} />
+          </span>
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setEditing(entry.budget)
-              setFormOpen(true)
-            }}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <Edit className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleDelete(entry.budget)}
-            className="text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+        <div className="relative mt-3">
+          <Meter value={over ? 100 : entry.progress} tone={tone} className="h-2" />
+          {/* Where spending "should" be if it were spread evenly over the cycle. */}
+          <div
+            className="absolute -top-1 h-4 w-0.5 rounded-full bg-foreground/40"
+            style={{ left: `${cycleProgress}%` }}
+            title="Today"
+          />
         </div>
+        <p className={cn("mt-2 text-xs", over ? "font-medium text-negative" : "text-muted-foreground")}>
+          {over ? (
+            <>
+              <Amount value={entry.overBy} /> over budget
+            </>
+          ) : (
+            <>
+              <Amount value={entry.remaining} /> left · {Math.round(entry.progress)}% used
+            </>
+          )}
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border p-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold">Budgets</h1>
-          </div>
-          <Button onClick={openNew} className="bg-accent hover:bg-accent/90">
-            <Plus className="h-4 w-4 mr-2" />
-            New Budget
+    <div className="space-y-5">
+      <PageHeader
+        title="Budgets"
+        description={
+          <>
+            {formatPeriod(period)} · {payWindow ? "resets with each salary" : "resets each month"}
+          </>
+        }
+        actions={
+          <Button onClick={openNew}>
+            <Plus />
+            New budget
           </Button>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
+      {usage.length > 0 && (
+        <section className="rounded-2xl border bg-card p-4 shadow-xs md:p-5">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Spent this cycle</p>
+              <p className="mt-1">
+                <Amount value={totalSpent} className="text-2xl font-semibold tracking-tight md:text-3xl" />
+                <span className="text-sm text-muted-foreground">
+                  {" "}
+                  of <Amount value={totalLimit} />
+                </span>
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">{Math.round(cycleProgress)}% of the cycle gone</p>
+          </div>
+          <div className="relative mt-4">
+            <Meter value={overallProgress} tone={budgetTone(overallProgress, totalSpent > totalLimit)} className="h-2.5" />
+            <div
+              className="absolute -top-1 h-[18px] w-0.5 rounded-full bg-foreground/40"
+              style={{ left: `${cycleProgress}%` }}
+            />
+          </div>
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:gap-4">
+        <StatCard
+          label="Free to spend"
+          value={<Amount value={freeToSpend} />}
+          hint="After bills and savings plans"
+          tone={freeToSpend < 0 ? "negative" : "default"}
+        />
+        <StatCard
+          label="Left in budgets"
+          value={<Amount value={totalRemaining} />}
+          hint="Still available this cycle"
+          tone="primary"
+        />
+        <StatCard
+          label="Not budgeted"
+          value={<Amount value={unbudgeted} />}
+          hint="Free money no budget covers yet"
+          tone={unbudgeted < 0 ? "negative" : "default"}
+        />
+      </div>
+
+      {unbudgeted < 0 && (
+        <Callout tone="negative">
+          Your budgets have <Amount value={Math.abs(unbudgeted)} className="font-semibold" /> more left in them than you
+          have free to spend. Lower a budget, or record income that has not been added yet, to line things up again.
+        </Callout>
+      )}
+
+      {usage.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{usage.map(renderBudget)}</div>
+      ) : (
+        <div className="rounded-2xl border bg-card">
+          <EmptyState
+            icon={PieChart}
+            title="No budgets yet"
+            description="Decide how much of your free money goes to food, fuel, shopping and the rest."
+            action={
+              <Button onClick={openNew}>
+                <Plus />
+                Create your first budget
+              </Button>
+            }
+          />
+        </div>
+      )}
+
+      {unbudgetedSpend > 0 && (
         <p className="text-sm text-muted-foreground">
-          This cycle: <span className="font-medium text-foreground">{formatPeriod(period)}</span>
-          {payWindow ? " - resets with each salary" : " - resets each month"}. Budgets only track spending against a
-          limit; they never move money.
+          <Amount value={unbudgetedSpend} className="font-medium text-foreground" /> was spent this cycle on expenses
+          without a budget. Pick a budget when you add an expense to track it.
         </p>
+      )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Free to Spend</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${freeToSpend < 0 ? "text-red-500" : ""}`}>
-                PKR {formatPKR(freeToSpend)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">After bills and savings plans</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Left in Budgets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-accent">PKR {formatPKR(totalRemaining)}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                PKR {formatPKR(totalSpent)} spent of PKR {formatPKR(totalLimit)}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Not Budgeted</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${unbudgeted < 0 ? "text-red-500" : ""}`}>
-                PKR {formatPKR(unbudgeted)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Free money no budget covers yet</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {unbudgeted < 0 && (
-          <Card className="border-destructive/40">
-            <CardContent className="pt-6">
-              <p className="text-sm">
-                Your budgets have PKR {formatPKR(Math.abs(unbudgeted))} more left in them than you have free to spend.
-                Lower a budget, or record income that has not been added yet, to line things up again.
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Your Budgets</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {usage.length > 0 ? (
-              <div className="space-y-4">{usage.map(renderBudget)}</div>
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                <PieChart className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">No budgets yet</h3>
-                <p className="text-sm mb-4">
-                  Decide how much of your free money goes to food, fuel, shopping and the rest.
-                </p>
-                <Button onClick={openNew} className="bg-accent hover:bg-accent/90">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Your First Budget
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {unbudgetedSpend > 0 && (
-          <p className="text-sm text-muted-foreground">
-            PKR {formatPKR(unbudgetedSpend)} was spent this cycle on expenses without a budget. Pick a budget when you
-            add an expense to track it.
-          </p>
-        )}
-      </main>
+      <p className="text-xs text-muted-foreground">
+        Budgets only track spending against a limit - they never move money. The marker on each bar shows how far
+        through the cycle you are.
+      </p>
 
       <BudgetModal open={formOpen} onOpenChange={setFormOpen} budget={editing} onClose={() => setEditing(null)} />
     </div>

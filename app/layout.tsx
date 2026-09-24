@@ -4,7 +4,8 @@ import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
-import { AssistantBar } from "@/components/assistant-bar"
+import { ThemeProvider } from "@/components/theme-provider"
+import { accentScript } from "@/lib/theme"
 
 export const metadata: Metadata = {
   title: "PaisaTrack - Personal Finance Tracker",
@@ -20,7 +21,10 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: "#1c1917",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f9fafb" },
+    { media: "(prefers-color-scheme: dark)", color: "#16171d" },
+  ],
   width: "device-width",
   initialScale: 1,
   // Keeps content clear of the notch and home indicator in standalone mode.
@@ -33,11 +37,16 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    // next-themes and the accent script both write to <html> before hydration.
+    <html lang="en" data-accent="indigo" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: accentScript }} />
+      </head>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} bg-background text-foreground`}>
-        {children}
-        <AssistantBar />
-        <Toaster richColors position="top-center" />
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          {children}
+          <Toaster richColors position="top-center" />
+        </ThemeProvider>
       </body>
     </html>
   )

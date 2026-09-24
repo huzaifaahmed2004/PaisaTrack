@@ -1,33 +1,31 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/hooks/use-auth"
+import { useState } from "react"
+import { MoreHorizontal, Pencil, Plus, Trash2, Wallet } from "lucide-react"
 import { useAccounts } from "@/hooks/use-accounts"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { AddAccountModal } from "@/components/add-account-modal"
 import { EditAccountModal } from "@/components/edit-account-modal"
-import { Loader2, ArrowLeft, Plus, Edit, Trash2, Wallet } from "lucide-react"
+import { useConfirm } from "@/components/confirm-dialog"
+import { Amount, EmptyState, PageHeader } from "@/components/app-ui"
 import { formatPKR } from "@/lib/money"
 import { accountTypeIcon, accountTypeLabel } from "@/lib/account-types"
 import { toast } from "sonner"
 import type { Account } from "@/lib/types"
 
 export default function AccountsPage() {
-  const { user, loading } = useAuth()
   const { accounts, totalBalance, deleteAccount, countAccountTransactions } = useAccounts()
-  const router = useRouter()
+  const confirm = useConfirm()
 
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null)
-
-  useEffect(() => {
-    if (!user && !loading) {
-      router.push("/")
-    }
-  }, [user, loading, router])
 
   const handleEditAccount = (account: Account) => {
     setSelectedAccount(account)
@@ -38,12 +36,16 @@ export default function AccountsPage() {
     try {
       // Entries belonging to this account go with it, so say how many.
       const entryCount = await countAccountTransactions(account.id)
-      const warning =
-        entryCount > 0
-          ? `Delete "${account.name}"? Its ${entryCount} transaction${entryCount !== 1 ? "s" : ""} will be deleted too, and PKR ${formatPKR(account.balance)} will drop out of your totals. This cannot be undone.`
-          : `Delete "${account.name}"? This cannot be undone.`
-
-      if (!confirm(warning)) return
+      const ok = await confirm({
+        title: `Delete "${account.name}"?`,
+        description:
+          entryCount > 0
+            ? `Its ${entryCount} transaction${entryCount !== 1 ? "s" : ""} will be deleted too, and PKR ${formatPKR(account.balance)} will drop out of your totals. This cannot be undone.`
+            : "This cannot be undone.",
+        confirmLabel: "Delete account",
+        destructive: true,
+      })
+      if (!ok) return
 
       await deleteAccount(account.id)
       toast.success("Account deleted")
@@ -53,119 +55,113 @@ export default function AccountsPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border p-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold">Accounts</h1>
-          </div>
-          <Button onClick={() => setAddModalOpen(true)} className="bg-accent hover:bg-accent/90">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Account
+    <div className="space-y-5">
+      <PageHeader
+        title="Accounts"
+        description="Cash, banks and wallets you keep money in"
+        actions={
+          <Button onClick={() => setAddModalOpen(true)}>
+            <Plus />
+            Add account
           </Button>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
-        {/* Total Balance Summary */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Total Balance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-accent">PKR {formatPKR(totalBalance)}</div>
-            <p className="text-sm text-muted-foreground mt-1">
-              Across {accounts.length} account{accounts.length !== 1 ? "s" : ""}
-            </p>
-          </CardContent>
-        </Card>
+      <section className="rounded-3xl bg-gradient-to-br from-hero-from to-hero-to p-5 text-white shadow-lg md:p-6">
+        <p className="text-sm text-white/75">Total balance</p>
+        <Amount value={totalBalance} className="mt-1 block text-3xl font-semibold tracking-tight md:text-4xl" />
+        <p className="mt-1 text-sm text-white/70">
+          Across {accounts.length} account{accounts.length !== 1 ? "s" : ""}
+        </p>
+        {accounts.length > 1 && totalBalance > 0 && (
+          <div className="mt-5 flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-white/10">
+            {accounts
+              .filter((account) => account.balance > 0)
+              .map((account, index) => (
+                <div
+                  key={account.id}
+                  title={account.name}
+                  className="h-full first:rounded-l-full last:rounded-r-full"
+                  style={{
+                    width: `${(account.balance / totalBalance) * 100}%`,
+                    background: `rgb(255 255 255 / ${Math.max(0.95 - index * 0.18, 0.25)})`,
+                  }}
+                />
+              ))}
+          </div>
+        )}
+      </section>
 
-        {/* Accounts List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Your Accounts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {accounts.length > 0 ? (
-              <div className="space-y-4">
-                {accounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
-                  >
-                    <div className="flex items-start md:items-center gap-4 min-w-0">
-                      <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center text-xl shrink-0">
-                        {accountTypeIcon(account.type)}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-lg truncate">{account.name}</h3>
-                        <p className="text-sm text-muted-foreground">{accountTypeLabel(account.type)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between md:justify-end gap-4">
-                      <div className="text-right">
-                        <p className="text-base sm:text-xl font-bold">PKR {formatPKR(account.balance)}</p>
-                        <p className="text-xs text-muted-foreground">Updated {account.updatedAt.toLocaleDateString()}</p>
-                      </div>
-                      <div className="flex gap-1 sm:gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditAccount(account)}
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteAccount(account)}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
+      {accounts.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {accounts.map((account) => {
+            const share = totalBalance > 0 ? Math.max((account.balance / totalBalance) * 100, 0) : 0
+            return (
+              <div key={account.id} className="rounded-2xl border bg-card p-4 shadow-xs">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-xl">
+                    {accountTypeIcon(account.type)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{account.name}</p>
+                    <p className="text-xs text-muted-foreground">{accountTypeLabel(account.type)}</p>
                   </div>
-                ))}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon-sm" className="-mt-1 -mr-1 text-muted-foreground">
+                        <MoreHorizontal />
+                        <span className="sr-only">Actions</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => handleEditAccount(account)}>
+                        <Pencil />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive" onSelect={() => handleDeleteAccount(account)}>
+                        <Trash2 />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <Amount
+                  value={account.balance}
+                  className={`mt-4 block text-2xl font-semibold tracking-tight ${account.balance < 0 ? "text-negative" : ""}`}
+                />
+                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{Math.round(share)}% of total</span>
+                  <span>Updated {account.updatedAt.toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
+                </div>
               </div>
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                <Wallet className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">No accounts yet</h3>
-                <p className="text-sm mb-4">Add your first account to start tracking your finances</p>
-                <Button onClick={() => setAddModalOpen(true)} className="bg-accent hover:bg-accent/90">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Your First Account
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </main>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => setAddModalOpen(true)}
+            className="flex min-h-36 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+          >
+            <Plus className="size-5" />
+            Add account
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-2xl border bg-card">
+          <EmptyState
+            icon={Wallet}
+            title="No accounts yet"
+            description="Add your first account to start tracking your finances."
+            action={
+              <Button onClick={() => setAddModalOpen(true)}>
+                <Plus />
+                Add your first account
+              </Button>
+            }
+          />
+        </div>
+      )}
 
-      {/* Modals */}
       <AddAccountModal open={addModalOpen} onOpenChange={setAddModalOpen} />
       <EditAccountModal
         open={editModalOpen}

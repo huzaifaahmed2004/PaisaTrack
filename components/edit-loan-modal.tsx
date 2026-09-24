@@ -138,7 +138,7 @@ export function EditLoanModal({ open, onOpenChange, loan, onClose }: EditLoanMod
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading} className="flex-1">
               {loading ? "Updating..." : "Update Loan"}
             </Button>
           </div>

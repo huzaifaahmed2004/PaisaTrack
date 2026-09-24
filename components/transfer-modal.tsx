@@ -160,7 +160,7 @@ export function TransferModal({ open, onOpenChange }: TransferModalProps) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1 bg-accent hover:bg-accent/90">
+            <Button type="submit" disabled={loading} className="flex-1">
               {loading ? "Transferring..." : "Transfer"}
             </Button>
           </div>
